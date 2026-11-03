@@ -1,0 +1,25 @@
+{
+  "text": "When an AI agent needs to remember something it writes to long term memory and reads it back later",
+  "durationSeconds": 9,
+  "words": [
+    { "word": "When", "startSeconds": 0.50, "endSeconds": 0.85 },
+    { "word": "an", "startSeconds": 0.90, "endSeconds": 1.25 },
+    { "word": "AI", "startSeconds": 1.30, "endSeconds": 1.65 },
+    { "word": "agent", "startSeconds": 1.70, "endSeconds": 2.05 },
+    { "word": "needs", "startSeconds": 2.10, "endSeconds": 2.45 },
+    { "word": "to", "startSeconds": 2.50, "endSeconds": 2.85 },
+    { "word": "remember", "startSeconds": 2.90, "endSeconds": 3.25 },
+    { "word": "something", "startSeconds": 3.30, "endSeconds": 3.65 },
+    { "word": "it", "startSeconds": 3.70, "endSeconds": 4.05 },
+    { "word": "writes", "startSeconds": 4.10, "endSeconds": 4.45 },
+    { "word": "to", "startSeconds": 4.50, "endSeconds": 4.85 },
+    { "word": "long", "startSeconds": 4.90, "endSeconds": 5.25 },
+    { "word": "term", "startSeconds": 5.30, "endSeconds": 5.65 },
+    { "word": "memory", "startSeconds": 5.70, "endSeconds": 6.05 },
+    { "word": "and", "startSeconds": 6.10, "endSeconds": 6.45 },
+    { "word": "reads", "startSeconds": 6.50, "endSeconds": 6.85 },
+    { "word": "it", "startSeconds": 6.90, "endSeconds": 7.25 },
+    { "word": "back", "startSeconds": 7.30, "endSeconds": 7.65 },
+    { "word": "later", "startSeconds": 7.70, "endSeconds": 8.05 }
+  ]
+}

@@ -1,0 +1,52 @@
+{
+  "version": "2.0",
+  "fps": 30,
+  "durationSeconds": 24,
+  "scenes": [
+    {
+      "id": "s1",
+      "layout": "flow",
+      "nodes": [
+        { "id": "user", "label": "Your question", "shape": "box", "icon": "chat", "color": "blue" },
+        { "id": "search", "label": "Search docs", "shape": "box", "icon": "search", "color": "orange" },
+        { "id": "db", "label": "Vector DB", "shape": "cylinder", "icon": "database", "color": "purple" },
+        { "id": "llm", "label": "LLM answer", "shape": "cloud", "icon": "bulb", "color": "green" }
+      ],
+      "edges": [
+        { "id": "e1", "from": "user", "to": "search" },
+        { "id": "e2", "from": "search", "to": "db", "label": "top 5" },
+        { "id": "e3", "from": "db", "to": "llm", "label": "context" }
+      ],
+      "ops": [
+        { "id": "t1", "type": "title", "text": "How RAG works", "trigger": { "word": "RAG", "wordIndex": 3 } },
+        { "id": "o1", "type": "draw", "target": "user", "trigger": { "word": "question", "wordIndex": 8 } },
+        { "id": "o2", "type": "connect", "target": "e1", "trigger": { "word": "searches", "wordIndex": 12 } },
+        { "id": "o3", "type": "draw", "target": "db", "trigger": { "word": "database", "wordIndex": 17 } },
+        { "id": "o4", "type": "connect", "target": "e2", "trigger": { "word": "closest", "wordIndex": 20 } },
+        { "id": "o5", "type": "flow", "target": "e2", "trigger": { "word": "pulls", "wordIndex": 23 } },
+        { "id": "o6", "type": "connect", "target": "e3", "trigger": { "word": "hands", "wordIndex": 28 } },
+        { "id": "o7", "type": "note", "target": "llm", "text": "no retraining!", "trigger": { "word": "retraining", "wordIndex": 35 } },
+        { "id": "o8", "type": "sparkle", "target": "llm", "trigger": { "word": "accurate", "wordIndex": 39 } }
+      ]
+    },
+    {
+      "id": "s2",
+      "layout": "compare",
+      "nodes": [
+        { "id": "ft", "label": "Fine-tuning", "shape": "box", "icon": "gear", "group": "a", "color": "pink" },
+        { "id": "ftcost", "label": "slow + costly", "shape": "pill", "group": "a", "color": "pink" },
+        { "id": "rag", "label": "RAG", "shape": "box", "icon": "search", "group": "b", "color": "green" },
+        { "id": "ragcost", "label": "always fresh", "shape": "pill", "group": "b", "color": "green" }
+      ],
+      "edges": [],
+      "ops": [
+        { "id": "p1", "type": "draw", "target": "ft", "trigger": { "word": "fine-tuning", "wordIndex": 44 } },
+        { "id": "p2", "type": "draw", "target": "ftcost", "trigger": { "word": "expensive", "wordIndex": 48 } },
+        { "id": "p3", "type": "cross", "target": "ftcost", "trigger": { "word": "skip", "wordIndex": 51 } },
+        { "id": "p4", "type": "draw", "target": "rag", "trigger": { "word": "RAG", "wordIndex": 54 } },
+        { "id": "p5", "type": "draw", "target": "ragcost", "trigger": { "word": "updated", "wordIndex": 58 } },
+        { "id": "p6", "type": "check", "target": "rag", "trigger": { "word": "wins", "wordIndex": 62 } }
+      ]
+    }
+  ]
+}

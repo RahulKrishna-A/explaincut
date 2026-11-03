@@ -1,0 +1,27 @@
+{
+  "version": "2.0",
+  "fps": 30,
+  "durationSeconds": 9,
+  "scenes": [
+    {
+      "id": "s1",
+      "layout": "flow",
+      "nodes": [
+        { "id": "agent", "label": "AI Agent", "shape": "box", "icon": "bot", "color": "blue" },
+        { "id": "memory", "label": "Long-term memory", "shape": "cylinder", "icon": "database", "color": "purple" }
+      ],
+      "edges": [
+        { "id": "e1", "from": "agent", "to": "memory", "label": "writes" },
+        { "id": "e2", "from": "memory", "to": "agent", "label": "reads" }
+      ],
+      "ops": [
+        { "id": "op1", "type": "draw", "target": "agent", "trigger": { "word": "agent", "wordIndex": 3 } },
+        { "id": "op2", "type": "connect", "target": "e1", "trigger": { "word": "writes", "wordIndex": 9 } },
+        { "id": "op3", "type": "draw", "target": "memory", "trigger": { "word": "memory", "wordIndex": 13 } },
+        { "id": "op4", "type": "connect", "target": "e2", "trigger": { "word": "reads", "wordIndex": 15 } },
+        { "id": "op5", "type": "flow", "target": "e2", "trigger": { "word": "back", "wordIndex": 17 } },
+        { "id": "op6", "type": "circle", "target": "memory", "trigger": { "word": "later", "wordIndex": 18 } }
+      ]
+    }
+  ]
+}

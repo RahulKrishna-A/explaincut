@@ -1,0 +1,53 @@
+{
+  "version": "2.0",
+  "fps": 30,
+  "durationSeconds": 20.88,
+  "scenes": [
+    {
+      "id": "s1",
+      "layout": "flow",
+      "nodes": [
+        { "id": "agent", "label": "AI Agent", "shape": "box", "icon": "bot", "color": "blue" },
+        { "id": "stm", "label": "Short-term memory", "shape": "box", "icon": "bolt", "color": "orange" },
+        { "id": "ltm", "label": "Long-term memory", "shape": "cylinder", "icon": "database", "color": "purple" },
+        { "id": "result", "label": "Optimal result", "shape": "cloud", "icon": "star", "color": "green" }
+      ],
+      "edges": [
+        { "id": "e1", "from": "agent", "to": "stm", "label": "1st" },
+        { "id": "e2", "from": "stm", "to": "ltm", "label": "not found?", "dashed": true },
+        { "id": "e3", "from": "ltm", "to": "result" },
+        { "id": "e4", "from": "stm", "to": "result" }
+      ],
+      "ops": [
+        { "id": "t1", "type": "title", "text": "How agent memory works", "trigger": { "word": "agent", "wordIndex": 5 } },
+        { "id": "o1", "type": "draw", "target": "agent", "trigger": { "word": "agent", "wordIndex": 11 } },
+        { "id": "o2", "type": "draw", "target": "stm", "trigger": { "word": "short", "wordIndex": 19 } },
+        { "id": "o3", "type": "connect", "target": "e1", "trigger": { "word": "memory", "wordIndex": 21 } },
+        { "id": "o4", "type": "flow", "target": "e1", "trigger": { "word": "context", "wordIndex": 24 } },
+        { "id": "o5", "type": "draw", "target": "ltm", "trigger": { "word": "long", "wordIndex": 36 } },
+        { "id": "o6", "type": "connect", "target": "e2", "trigger": { "word": "memory", "wordIndex": 38 } },
+        { "id": "o7", "type": "draw", "target": "result", "trigger": { "word": "combines", "wordIndex": 43 } },
+        { "id": "o8", "type": "connect", "target": "e4", "trigger": { "word": "both", "wordIndex": 44 } },
+        { "id": "o9", "type": "connect", "target": "e3", "trigger": { "word": "them", "wordIndex": 47 } },
+        { "id": "o10", "type": "sparkle", "target": "result", "trigger": { "word": "optimal", "wordIndex": 51 } },
+        { "id": "o11", "type": "check", "target": "result", "trigger": { "word": "require", "wordIndex": 55 } }
+      ]
+    },
+    {
+      "id": "s2",
+      "layout": "flow",
+      "nodes": [
+        { "id": "chat", "label": "New chat", "shape": "box", "icon": "chat", "color": "pink" },
+        { "id": "mem", "label": "Existing memory", "shape": "cylinder", "icon": "database", "color": "purple" }
+      ],
+      "edges": [{ "id": "f1", "from": "chat", "to": "mem", "label": "always first" }],
+      "ops": [
+        { "id": "q1", "type": "draw", "target": "chat", "trigger": { "word": "chat", "wordIndex": 60 } },
+        { "id": "q2", "type": "connect", "target": "f1", "trigger": { "word": "always", "wordIndex": 62 } },
+        { "id": "q3", "type": "draw", "target": "mem", "trigger": { "word": "existing", "wordIndex": 66 } },
+        { "id": "q4", "type": "flow", "target": "f1", "trigger": { "word": "memory", "wordIndex": 67 } },
+        { "id": "q5", "type": "circle", "target": "mem", "trigger": { "word": "chat.", "wordIndex": 68 } }
+      ]
+    }
+  ]
+}
