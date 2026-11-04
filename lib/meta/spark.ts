@@ -162,9 +162,11 @@ ${findings
 Timing budget (the renderer uses ONE pen): a node takes ~1.0-1.5 s to draw, an arrow ~0.6 s, a note ~1 s, a bar/point ~0.8 s. Leave at least ~1.2 s between ops that draw new things, and finish a scene's last drawing op at least ~1.5 s before the next scene's first op - otherwise things land late or are wiped as soon as they appear.
 
 How to fix each kind:
-- timing (late / never drawn / wiped too soon): trigger the op on an EARLIER word that still introduces the idea, remove a less important op nearby (notes, sparkles, extra flows), or move part of the scene into a new scene. Keep the same word-index rules.
+- timing (late / never drawn / wiped too soon): trigger the op on an EARLIER word that still introduces the idea, remove a less important op nearby (notes, sparkles, extra flows), or move part of the scene into a new scene. Keep the same word-index rules. A sticker that is wiped too soon should be triggered earlier or moved to a scene with room - not deleted.
 - overlap (hidden behind the speaker): fewer nodes, shorter labels, or a layout that needs less room (e.g. stack or timeline instead of hub).
 - relevance (doesn't match the speech): change labels, icons, chart data or the layout so the visual says what the speaker says.
+
+Fix problems by re-timing, re-labelling or re-arranging - NEVER by deleting the scene, sticker, node or chart the finding is about. The revised video must still show every idea the speaker explains, with at least as many scenes and stickers as before.
 
 Rules: revise ONLY scene(s) ${scenes.length ? scenes.join(", ") : "involved in the findings"}; every other scene is kept as it is automatically. Keep the scene ids of the scenes you revise (a scene you split out needs a new id). Word indices still refer to the full transcript.
 Output ONLY one JSON object of the form {"scenes": [ ...the revised scene(s), plus any new split-out scenes... ]} - do NOT repeat unchanged scenes.`;

@@ -121,8 +121,9 @@ function mergeScenes(original: unknown, revised: unknown, flagged: Set<string>):
   const origIds = new Set(orig.scenes.map((s) => s.id));
   const scenes: unknown[] = [];
   for (const s of orig.scenes) {
-    if (!flagged.has(s.id)) scenes.push(s);
-    else if (revById.has(s.id)) scenes.push(revById.get(s.id));
+    // Spark is told to leave out scenes it didn't change - so a flagged scene missing from the
+    // revision keeps its current version. A scene is never dropped by omission.
+    scenes.push(flagged.has(s.id) && revById.has(s.id) ? revById.get(s.id) : s);
   }
   // Scenes Spark split out of a flagged one.
   for (const s of rev.scenes) if (!origIds.has(s.id)) scenes.push(s);
@@ -249,9 +250,23 @@ export async function runSelfReview(deps: SelfReviewDeps): Promise<SelfReviewRes
   // Spark drafts a fix; each draft is laid out and measured (no render - milliseconds) and, if it
   // still has timing/overlap problems in the flagged scenes, goes back to Spark once more.
   // The best-scoring draft is the one that gets rendered.
+  // A "fix" that deletes the thing with the problem isn't a fix: drafts that lose scenes, stickers
+  // or a good share of what's drawn are scored as if they had extra serious problems.
+  const contentOf = (rp: RenderPlan) => {
+    const els = rp.scenes.flatMap((s) => s.elements);
+    return { scenes: rp.scenes.length, stickers: els.filter((e) => e.kind === "sticker").length, elements: els.length };
+  };
+  const firstContent = contentOf(renderPlan);
   const draftProblems = (raw: unknown) => {
     const rp = deps.simulate(raw);
-    return [...measureTiming(rp), ...measureOverlap(rp, masks)].filter((m) => m.severity !== "low" && m.sceneId && flagged.has(m.sceneId));
+    const problems = [...measureTiming(rp), ...measureOverlap(rp, masks)].filter((m) => m.severity !== "low" && m.sceneId && flagged.has(m.sceneId));
+    const c = contentOf(rp);
+    const lost =
+      Math.max(0, firstContent.scenes - c.scenes) * 3 +
+      Math.max(0, firstContent.stickers - c.stickers) * 2 +
+      (c.elements < firstContent.elements * 0.75 ? 2 : 0);
+    if (lost > 0) console.warn(`Draft lost content (${JSON.stringify(firstContent)} -> ${JSON.stringify(c)}), penalty ${lost}`);
+    return { problems, score: problems.length + lost };
   };
   let revised: unknown;
   let revisedScore = Infinity;
@@ -260,19 +275,22 @@ export async function runSelfReview(deps: SelfReviewDeps): Promise<SelfReviewRes
   for (let draft = 1; draft <= MAX_DRAFTS; draft++) {
     let candidate: unknown;
     let problems: MeasuredFinding[];
+    let score: number;
     try {
-      candidate = mergeScenes(deps.rawPlan, await replanScenes(transcript, deps.space, base, request), flagged);
-      problems = draftProblems(candidate);
+      candidate = mergeScenes(base, await replanScenes(transcript, deps.space, base, request), flagged);
+      const measured = draftProblems(candidate);
+      problems = measured.problems;
+      score = measured.score;
     } catch (err) {
       console.error(`Muse Spark draft ${draft} failed:`, err);
       if (draft === 1) return giveUp("Muse Spark couldn't produce a valid fix - kept the original cut");
       break;
     }
-    if (problems.length < revisedScore) {
+    if (score < revisedScore) {
       revised = candidate;
-      revisedScore = problems.length;
+      revisedScore = score;
     }
-    // Another Spark pass costs ~1-2 minutes: only worth it for problems a viewer would really notice.
+    // Another Spark pass takes ~1-2 minutes: only worth it for problems a viewer would really notice.
     if (draft === MAX_DRAFTS || !problems.some((m) => m.severity === "high")) break;
     const serious = problems.filter((m) => m.severity === "high");
     log(`Spark's draft still has ${serious.length} serious timing/overlap problem${serious.length > 1 ? "s" : ""} - asking for another pass`);

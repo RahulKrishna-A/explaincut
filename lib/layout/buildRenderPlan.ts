@@ -617,7 +617,18 @@ function placeSticker(aspect: number, target: Rect | undefined, occupied: Rect[]
   const overlapArea = (a: Rect, b: Rect) =>
     Math.max(0, Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x)) * Math.max(0, Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y));
 
-  for (const side of [ctx.u * 25, ctx.u * 21, ctx.u * 17, ctx.u * 14]) {
+  // Roomy tiers first; the last two are for tight frames (speaker filling the width, one
+  // band above the head): a bit smaller, a tighter gap, and stuck further over the target's
+  // corner - still clear of its label centre. Better a snug sticker than none.
+  const tiers = [
+    { side: ctx.u * 25, gap: 1.2, cover: 0.16 },
+    { side: ctx.u * 21, gap: 1.2, cover: 0.16 },
+    { side: ctx.u * 17, gap: 1.2, cover: 0.16 },
+    { side: ctx.u * 14, gap: 1.2, cover: 0.16 },
+    { side: ctx.u * 13, gap: 0.5, cover: 0.3 },
+    { side: ctx.u * 11, gap: 0.4, cover: 0.38 },
+  ];
+  for (const { side, gap, cover } of tiers) {
     const w = aspect >= 1 ? side : side * aspect;
     const h = aspect >= 1 ? side / aspect : side;
     let best: { rect: Rect; score: number } | null = null;
@@ -627,12 +638,15 @@ function placeSticker(aspect: number, target: Rect | undefined, occupied: Rect[]
       for (let iy = 0; iy <= steps; iy++) {
         for (let ix = 0; ix <= steps; ix++) {
           const rect = { x: region.x + ((region.w - w) * ix) / steps, y: region.y + ((region.h - h) * iy) / steps, w, h };
-          if (others.some((o) => overlaps(inflate(rect, ctx.u * 1.2), o))) continue;
+          if (others.some((o) => overlaps(inflate(rect, ctx.u * gap), o))) continue;
           let stuck = 0;
           if (target) {
             const ov = overlapArea(rect, target);
             // A corner, not the label: cap how much of the box it may cover.
-            if (ov > target.w * target.h * 0.16 || ov > w * h * 0.3) continue;
+            if (ov > target.w * target.h * cover || ov > w * h * Math.max(0.3, cover)) continue;
+            // Never over the middle of the box, where its label is.
+            const tc = center(target);
+            if (tc.x > rect.x && tc.x < rect.x + w && tc.y > rect.y && tc.y < rect.y + h) continue;
             stuck = ov;
           }
           const c = center(rect);
