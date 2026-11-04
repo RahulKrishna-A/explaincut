@@ -1,53 +1,41 @@
-# syntax = docker/dockerfile:1
+# ExplainCut - runs the whole app (Next.js + ffmpeg + Remotion/Chromium) as one
+# long-lived process. Built for Railway, but works on any Docker host.
+FROM node:22-bookworm-slim
 
-# Adjust NODE_VERSION as desired
-ARG NODE_VERSION=22.21.1
-FROM node:${NODE_VERSION}-slim AS base
+# System libraries headless Chromium needs for Remotion, plus fonts.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    fonts-liberation \
+    libnss3 libdbus-1-3 libatk1.0-0 libatk-bridge2.0-0 libasound2 \
+    libxrandr2 libxkbcommon0 libxfixes3 libxcomposite1 libxdamage1 \
+    libgbm1 libcups2 libcairo2 libpango-1.0-0 libx11-6 libxext6 \
+    && rm -rf /var/lib/apt/lists/*
 
-LABEL fly_launch_runtime="Next.js"
-
-# Next.js app lives here
 WORKDIR /app
 
-# Set production environment
-ENV NODE_ENV="production"
+COPY package.json package-lock.json ./
+RUN npm ci
 
-
-# Throw-away build stage to reduce size of final image
-FROM base AS build
-
-# Install packages needed to build node modules
-RUN apt-get update -qq && \
-    apt-get install --no-install-recommends -y build-essential node-gyp pkg-config python-is-python3
-
-# Install node modules
-COPY package-lock.json package.json ./
-RUN npm ci --include=dev
-
-# Copy application code
 COPY . .
 
-# Build application
-RUN npx next build --experimental-build-mode compile
+# Public build-time values are inlined into the client bundle. On Railway,
+# service variables are passed to the build automatically as build args when
+# declared here.
+ARG NEXT_PUBLIC_SITE_URL
+ARG NEXT_PUBLIC_APP_NAME
+ENV NEXT_PUBLIC_SITE_URL=$NEXT_PUBLIC_SITE_URL \
+    NEXT_PUBLIC_APP_NAME=$NEXT_PUBLIC_APP_NAME
 
-# Remove development dependencies
-RUN npm prune --omit=dev
+RUN npm run build
 
+# Download Remotion's headless Chromium now so the first render isn't slow.
+RUN npx remotion browser ensure
 
-# Final stage for app image
-FROM base
+ENV NODE_ENV=production
+# Job files live here; mount a Railway volume at this path to keep them across restarts.
+ENV JOB_DATA_DIR=/app/data/jobs
+RUN mkdir -p /app/data/jobs /app/data/stickers
 
-# Install packages needed for deployment
-RUN apt-get update -qq && \
-    apt-get install --no-install-recommends -y ffmpeg && \
-    rm -rf /var/lib/apt/lists /var/cache/apt/archives
-
-# Copy built application
-COPY --from=build /app /app
-
-# Entrypoint sets up the container.
-ENTRYPOINT [ "/app/docker-entrypoint.js" ]
-
-# Start the server by default, this can be overwritten at runtime
 EXPOSE 3000
-CMD [ "npm", "run", "start" ]
+# Railway injects PORT; next start honours it and binds 0.0.0.0.
+CMD ["sh", "-c", "npx next start -p ${PORT:-3000}"]
