@@ -99,8 +99,11 @@ export async function renderTransparentLayer(compositionId: string, props: Recor
     "--pixel-format=yuva444p10le",
     // Containers (Railway) have a tiny /dev/shm and tight memory: Remotion's shared-memory
     // frame hand-off to FFmpeg dies there. The screenshot path is slower but dependable
-    // (PNG screenshots: the only format that keeps the alpha channel).
-    ...(process.env.REMOTION_DISABLE_SHARED_MEMORY === "1" ? ["--disable-shared-memory-capture", "--image-format=png"] : []),
+    // (PNG screenshots: the only format that keeps the alpha channel). Default concurrency
+    // opens one Chrome tab per CPU core, each buffering full-res RGBA frames plus the
+    // prores_ks encoder's own buffers - on a small instance that adds up and the OOM
+    // killer SIGKILLs ffmpeg mid-render; one tab at a time keeps peak memory bounded.
+    ...(process.env.REMOTION_DISABLE_SHARED_MEMORY === "1" ? ["--disable-shared-memory-capture", "--image-format=png", "--concurrency=1"] : []),
   ];
   // Width/height/fps come from the props (calculateMetadata), which are
   // built at the speaker video's own resolution, so the later ffmpeg
