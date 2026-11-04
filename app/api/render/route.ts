@@ -6,9 +6,9 @@ import { parseRenderOptions } from "@/lib/renderOptions";
 /**
  * The pipeline runs after this response, inside the same invocation. On a
  * self-hosted server this is unlimited; on a serverless platform it is capped
- * by this value (Vercel Pro/Enterprise allow up to 800 s).
+ * by this value (Vercel Hobby allows at most 300 s; Pro/Enterprise up to 800 s).
  */
-export const maxDuration = 800;
+export const maxDuration = 300;
 
 export async function POST(request: NextRequest) {
   let body: { jobId?: unknown; options?: unknown };
