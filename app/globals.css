@@ -904,3 +904,79 @@ input:focus-visible + label,
   color: var(--ok);
   font-size: 14px;
 }
+
+/* ---------- upload bento ---------- */
+.ec-main-bento {
+  justify-content: flex-start;
+}
+.ec-bento {
+  width: 100%;
+  max-width: 1120px;
+  display: grid;
+  grid-template-columns: 1.4fr 1fr;
+  grid-template-areas:
+    "hero hero"
+    "drop captions"
+    "drop review"
+    "pipeline pipeline";
+  gap: 16px;
+  align-items: stretch;
+}
+.ec-bento-hero {
+  grid-area: hero;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 4px 2px 8px;
+}
+.ec-bento-hero h1 {
+  font-size: clamp(28px, 4vw, 40px);
+  line-height: 1.05;
+  letter-spacing: -0.04em;
+  font-weight: 700;
+  margin: 0;
+}
+.ec-bento-hero p {
+  font-size: 16px;
+  color: var(--muted);
+  margin: 0;
+}
+.ec-bento-drop {
+  grid-area: drop;
+  display: flex;
+}
+.ec-bento-drop .ec-drop {
+  flex: 1;
+  justify-content: center;
+  min-width: 0;
+}
+.ec-drop-preview {
+  width: 100%;
+  max-height: 340px;
+  border-radius: 6px;
+  background: #000;
+  object-fit: contain;
+}
+.ec-bento-captions {
+  grid-area: captions;
+  display: flex;
+}
+.ec-bento-review {
+  grid-area: review;
+  display: flex;
+}
+.ec-bento-captions .ec-settings,
+.ec-bento-review .ec-settings {
+  max-width: none;
+}
+.ec-bento-pipeline {
+  grid-area: pipeline;
+  justify-content: flex-start;
+  max-width: none;
+}
+@media (max-width: 860px) {
+  .ec-bento {
+    grid-template-columns: 1fr;
+    grid-template-areas: "hero" "drop" "captions" "review" "pipeline";
+  }
+}

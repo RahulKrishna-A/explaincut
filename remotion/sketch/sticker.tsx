@@ -266,7 +266,7 @@ function halfPlane(o: { x: number; y: number }, d: { x: number; y: number }, f: 
 }
 
 export const StickerView: React.FC<{ el: StickerElement; ctx: DrawCtx }> = ({ el, ctx }) => {
-  const { frame, fps, u, palette } = ctx;
+  const { frame, fps, u } = ctx;
   const local = frame - el.start;
   if (local < 0) return null;
 
@@ -400,12 +400,6 @@ export const StickerView: React.FC<{ el: StickerElement; ctx: DrawCtx }> = ({ el
         ) : (
           content
         )}
-        {ctx.journal ? (
-          <g transform={`rotate(${(-4 + (el.seed % 9)).toFixed(1)} ${cx} ${box.y})`}>
-            <rect x={cx - u * 4.2} y={box.y - u * 1.4} width={u * 8.4} height={u * 2.8} fill={palette.accents[el.color]} opacity={0.82} />
-            <path d={`M${cx - u * 4.2} ${box.y - u * 1.4}l${u * 0.5} ${u * 0.7}l${-u * 0.5} ${u * 0.7}l${u * 0.5} ${u * 0.7}M${cx + u * 4.2} ${box.y - u * 1.4}l${-u * 0.5} ${u * 0.7}l${u * 0.5} ${u * 0.7}l${-u * 0.5} ${u * 0.7}`} stroke="rgba(255,255,255,0.7)" strokeWidth={u * 0.3} fill="none" />
-          </g>
-        ) : null}
       </g>
       {ex < 0.05 ? impactStrokes(el, ctx, sinceLand) : null}
     </g>

@@ -48,7 +48,8 @@ export function describePlanForReview(plan: RenderPlan, transcript: Transcript):
           const said = el.cue !== undefined ? `, cued by ${wordAt(el.cue / plan.fps)} at ${fmt(el.cue / plan.fps)}` : "";
           return `  - ${label}: drawn ${fmt(el.start / plan.fps)}-${fmt((el.start + el.duration) / plan.fps)}${said}`;
         });
-      return `Scene ${scene.id} (on screen ${fmt(scene.start / plan.fps)}-${fmt(scene.end / plan.fps)}):\n${items.join("\n")}`;
+      const where = scene.board ? ", FULL-SCREEN BLACK BOARD - the speaker is intentionally faded out" : "";
+      return `Scene ${scene.id} (on screen ${fmt(scene.start / plan.fps)}-${fmt(scene.end / plan.fps)}${where}):\n${items.join("\n")}`;
     })
     .join("\n");
 }
@@ -87,6 +88,7 @@ Report real problems a viewer would notice, in three kinds:
 - "relevance": a drawing, label or chart doesn't match what's being said, is misleading, or is unreadable.
 - "timing": something appears clearly before or after the speaker talks about it.
 - "overlap": a drawing covers the speaker's face, or is cut off / hidden behind them.
+Scenes marked FULL-SCREEN BLACK BOARD deliberately cut away from the speaker to a black canvas the drawing fills - that is the intended look, not a problem.
 
 Output ONLY a JSON array (no prose). Each item:
 {"kind": "relevance"|"timing"|"overlap", "severity": "low"|"medium"|"high", "sceneId": string, "target": short label of the affected element, "time": seconds where it shows, "title": one line (<= 12 words), "detail": one or two sentences, "suggestion": how to fix it in the plan}

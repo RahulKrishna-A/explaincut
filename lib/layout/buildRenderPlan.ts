@@ -27,12 +27,10 @@ import type {
   ResolvedDiagramScene,
   SliceElement,
   StickerAssets,
-  RenderStyle,
 } from "@/types/diagramPlan";
 import { legacyStickerKey, stickerKey } from "./stickerKey";
 import { toneProfile } from "@/lib/style/tone";
-import { buildSweeps } from "./buildSweeps";
-import { buildKeywords } from "./buildKeywords";
+import { BOARD_FADE_SECONDS, boardSpace } from "./board";
 import {
   SHAPE_ASPECT,
   center,
@@ -103,7 +101,12 @@ interface Ctx {
   W: number;
   H: number;
   u: number; // 1% of the short side
+  /** Unit for how big things are drawn: = u around the speaker, larger on the full-screen board. */
+  s: number;
 }
+
+/** On the full-screen board there's room for bigger boxes, type and stickers. */
+const BOARD_SCALE = 1.35;
 
 function minCell(ctx: Ctx) {
   return { w: ctx.u * 19, h: ctx.u * 9 };
@@ -162,8 +165,8 @@ function columnCells(region: Rect, n: number): Rect[] {
 const STRETCH: Record<NodeShape, number> = { box: 1, pill: 1, circle: 1.35, cylinder: 1.8, cloud: 1.4, diamond: 1.35, doc: 1.15 };
 
 function boxInCell(cell: Rect, shape: NodeShape, ctx: Ctx, aspectOverride?: number): Rect {
-  const maxW = Math.min(cell.w * 0.86, ctx.u * 42);
-  const maxH = Math.min(cell.h * 0.8, ctx.u * 30);
+  const maxW = Math.min(cell.w * 0.86, ctx.s * 42);
+  const maxH = Math.min(cell.h * 0.8, ctx.s * 30);
   const preferred = aspectOverride ?? SHAPE_ASPECT[shape];
   const aspect = aspectOverride ? preferred : Math.max(preferred / STRETCH[shape], Math.min(preferred * STRETCH[shape], maxW / maxH));
   let w = Math.min(maxW, maxH * aspect);
@@ -483,7 +486,7 @@ function layoutScene(scene: ResolvedDiagramScene, space: FreeSpace, ctx: Ctx, se
   const ti = titleRegion ? regions.indexOf(titleRegion) : -1;
   if (titleOp?.text && ti >= 0) {
     const p = regions[ti];
-    const maxFont = clamp(ctx.u * 6, 18, 90);
+    const maxFont = clamp(ctx.s * 6, 18, 110);
     const fit = fitText(titleOp.text, p.w * 0.94, p.h * 0.3, maxFont, maxFont * 0.55, 2);
     const blockWidth = Math.max(...fit.lines.map((l) => estimateTextWidth(l, fit.fontSize)));
     const blockH = fit.lines.length * fit.fontSize * LINE_HEIGHT_EM + ctx.u * 2.4;
@@ -547,13 +550,13 @@ function placeNote(
   regions: FreeRegion[],
   ctx: Ctx
 ): { x: number; y: number; lines: string[]; fontSize: number; blockWidth: number; rect: Rect; crosses: boolean } | null {
-  const base = clamp(ctx.u * 4.8, 16, 72);
+  const base = clamp(ctx.s * 4.8, 16, 88);
   let best: { x: number; y: number; lines: string[]; fontSize: number; blockWidth: number; rect: Rect; score: number; crosses: boolean } | null =
     null;
   const tc = target ? center(target) : null;
   for (const fontSize of [base, base * 0.86, base * 0.74]) {
     for (const region of regions) {
-      const maxW = Math.min(region.w * 0.96, ctx.u * 40);
+      const maxW = Math.min(region.w * 0.96, ctx.s * 40);
       const lines = wrapText(text, fontSize, maxW);
       if (lines.length > 3) continue;
       const bw = Math.max(...lines.map((l) => estimateTextWidth(l, fontSize))) + ctx.u;
@@ -621,12 +624,12 @@ function placeSticker(aspect: number, target: Rect | undefined, occupied: Rect[]
   // band above the head): a bit smaller, a tighter gap, and stuck further over the target's
   // corner - still clear of its label centre. Better a snug sticker than none.
   const tiers = [
-    { side: ctx.u * 25, gap: 1.2, cover: 0.16 },
-    { side: ctx.u * 21, gap: 1.2, cover: 0.16 },
-    { side: ctx.u * 17, gap: 1.2, cover: 0.16 },
-    { side: ctx.u * 14, gap: 1.2, cover: 0.16 },
-    { side: ctx.u * 13, gap: 0.5, cover: 0.3 },
-    { side: ctx.u * 11, gap: 0.4, cover: 0.38 },
+    { side: ctx.s * 25, gap: 1.2, cover: 0.16 },
+    { side: ctx.s * 21, gap: 1.2, cover: 0.16 },
+    { side: ctx.s * 17, gap: 1.2, cover: 0.16 },
+    { side: ctx.s * 14, gap: 1.2, cover: 0.16 },
+    { side: ctx.s * 13, gap: 0.5, cover: 0.3 },
+    { side: ctx.s * 11, gap: 0.4, cover: 0.38 },
   ];
   for (const { side, gap, cover } of tiers) {
     const w = aspect >= 1 ? side : side * aspect;
@@ -696,9 +699,9 @@ function edgeBends(scene: ResolvedDiagramScene, boxes: Map<string, Rect>, ctx: C
   return bends;
 }
 
-export function buildRenderPlan(plan: ResolvedDiagramPlan, space: FreeSpace, stickers: StickerAssets = {}, style: RenderStyle = "classic"): RenderPlan {
+export function buildRenderPlan(plan: ResolvedDiagramPlan, space: FreeSpace, stickers: StickerAssets = {}): RenderPlan {
   const { width: W, height: H } = space;
-  const ctx: Ctx = { W, H, u: Math.min(W, H) / 100 };
+  const ctx: Ctx = { W, H, u: Math.min(W, H) / 100, s: Math.min(W, H) / 100 };
   const fps = plan.fps;
   const totalFrames = Math.max(1, Math.round(plan.durationSeconds * fps));
   const lead = Math.round(LEAD_SECONDS * fps);
@@ -717,7 +720,11 @@ export function buildRenderPlan(plan: ResolvedDiagramPlan, space: FreeSpace, sti
     const lastDrawFrame = sceneEnd - eraseFrames;
 
     const seedBase = hash(`${scene.id}`);
-    const geo = layoutScene(scene, space, ctx, seedBase);
+    // A board scene has the whole frame to itself - the speaker is faded out behind black.
+    const isBoard = scene.canvas === "board";
+    const sceneSpace = isBoard ? boardSpace(space) : space;
+    const sctx: Ctx = isBoard ? { ...ctx, s: ctx.u * BOARD_SCALE } : ctx;
+    const geo = layoutScene(scene, sceneSpace, sctx, seedBase);
     const bends = edgeBends(scene, geo.boxes, ctx);
     // Arrows (and their labels) are occupied space too, so notes don't land on them.
     for (const e of scene.edges) {
@@ -737,7 +744,7 @@ export function buildRenderPlan(plan: ResolvedDiagramPlan, space: FreeSpace, sti
     const edgeById = new Map(scene.edges.map((e) => [e.id, e]));
 
     // One font size per scene so labels read as a consistent set.
-    const labelMax = clamp(ctx.u * 5.8, 18, 96);
+    const labelMax = clamp(sctx.s * 5.8, 18, 110);
     let sceneFont = labelMax;
     for (const node of scene.nodes) {
       const box = geo.boxes.get(node.id);
@@ -1028,7 +1035,7 @@ export function buildRenderPlan(plan: ResolvedDiagramPlan, space: FreeSpace, sti
 
     function addNote(text: string, targetId: string | undefined, frame: number, key: string) {
       const targetNode = targetId ? ensureTarget(targetId, frame) : null;
-      const placed = placeNote(text, targetNode?.box, [...geo.occupied, ...notePlaced], space.regions, ctx);
+      const placed = placeNote(text, targetNode?.box, [...geo.occupied, ...notePlaced], sceneSpace.regions, sctx);
       if (!placed) return;
       notePlaced.push(placed.rect);
       const gap = targetNode
@@ -1065,7 +1072,7 @@ export function buildRenderPlan(plan: ResolvedDiagramPlan, space: FreeSpace, sti
       const asset = stickers[stickerKey(subject, scene.tone)] ?? stickers[legacyStickerKey(subject)];
       if (!asset) return; // generation failed or was skipped - nothing to show
       const target = targetId ? ensureTarget(targetId, frame) : null;
-      const rect = placeSticker(asset.width / Math.max(1, asset.height), target?.box, [...geo.occupied, ...notePlaced], space.regions, ctx);
+      const rect = placeSticker(asset.width / Math.max(1, asset.height), target?.box, [...geo.occupied, ...notePlaced], sceneSpace.regions, sctx);
       if (!rect) return;
       // Not pen-drawn, so it doesn't queue behind the pen - it lands right on its word.
       const start = Math.max(frame - lead, sceneStart, target ? target.start + Math.round(target.duration * 0.5) : 0);
@@ -1101,7 +1108,15 @@ export function buildRenderPlan(plan: ResolvedDiagramPlan, space: FreeSpace, sti
 
     if (elements.length === 0) return;
     elements.sort((a, b) => a.start - b.start);
-    renderScenes.push({ id: scene.id, tone: scene.tone, start: elements[0].start, end: sceneEnd, elements });
+    renderScenes.push({
+      id: scene.id,
+      tone: scene.tone,
+      start: elements[0].start,
+      end: sceneEnd,
+      elements,
+      // Fully black by the first stroke; back on the speaker as the scene wipes.
+      ...(isBoard ? { board: { in: Math.max(0, Math.min(sceneStart, elements[0].start) - sec(BOARD_FADE_SECONDS)), out: sceneEnd } } : {}),
+    });
   });
 
   return {
@@ -1114,7 +1129,5 @@ export function buildRenderPlan(plan: ResolvedDiagramPlan, space: FreeSpace, sti
     regions: space.regions,
     scenes: renderScenes,
     dropped,
-    ...(style === "journal" ? { style, sweeps: buildSweeps(renderScenes, space, fps, totalFrames) } : {}),
-    ...(style === "hormozi" ? { style, keywords: buildKeywords(plan, space, fps, totalFrames) } : {}),
   };
 }

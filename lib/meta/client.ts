@@ -1,5 +1,12 @@
 const BASE_URL = process.env.MODEL_API_BASE_URL ?? "https://api.meta.ai/v1";
 
+/**
+ * Hard cap per API call (META_TIMEOUT_MS, default 4 min). Without it a stalled
+ * request hangs the whole job; with it the caller's fallback kicks in (e.g. the
+ * self-review keeps the cut it already has).
+ */
+const TIMEOUT_MS = Number(process.env.META_TIMEOUT_MS) > 0 ? Number(process.env.META_TIMEOUT_MS) : 240_000;
+
 function apiKey(): string {
   const key = process.env.MODEL_API_KEY;
   if (!key) {
@@ -27,6 +34,7 @@ export async function metaPostJSON(path: string, body: unknown): Promise<unknown
       "Content-Type": "application/json",
     },
     body: JSON.stringify(body),
+    signal: AbortSignal.timeout(TIMEOUT_MS),
   });
   return parseOrThrow(res, path);
 }
@@ -37,6 +45,7 @@ export async function metaPostForm(path: string, form: FormData): Promise<unknow
     method: "POST",
     headers: { Authorization: `Bearer ${apiKey()}` },
     body: form,
+    signal: AbortSignal.timeout(TIMEOUT_MS),
   });
   return parseOrThrow(res, path);
 }
@@ -44,6 +53,7 @@ export async function metaPostForm(path: string, form: FormData): Promise<unknow
 export async function metaGet(path: string): Promise<unknown> {
   const res = await fetch(`${BASE_URL}${path}`, {
     headers: { Authorization: `Bearer ${apiKey()}` },
+    signal: AbortSignal.timeout(TIMEOUT_MS),
   });
   return parseOrThrow(res, path);
 }

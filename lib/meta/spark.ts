@@ -20,14 +20,51 @@ function extractJson(content: string): unknown {
   return JSON.parse(jsonText.slice(start, end + 1));
 }
 
+/**
+ * The free space is only a short band (typically above the head when the
+ * speaker fills the frame's width): everything has to sit in one row, so
+ * each box gets small fast. Plans for it need fewer, bigger things.
+ */
+function isNarrowBand(space: FreeSpace): boolean {
+  const main = space.regions[0];
+  if (!main) return true;
+  return main.h < space.height * 0.3 && main.w / main.h > 1.6;
+}
+
 /** Rough per-scene node budget, so scenes never cram more than the free space can hold legibly. */
 function nodeBudget(space: FreeSpace): number {
   const main = space.regions[0];
-  if (!main) return 3;
+  if (!main || isNarrowBand(space)) return 3;
   const share = (main.w * main.h) / (space.width * space.height);
   if (share > 0.3) return 5;
   if (share > 0.16) return 4;
   return 3;
+}
+
+/** Extra direction for tight frames - big and readable beats complete. */
+function narrowBandGuide(space: FreeSpace): string {
+  if (!isNarrowBand(space)) return "";
+  return `
+TIGHT FRAME: the speaker fills the frame, so the only room is a short band. Everything must read at phone size, so:
+- At most 3 nodes per scene, in ONE row: prefer "flow", "compare" or "timeline"; avoid "hub", "tree", "stack" and "cycle" (they need height).
+- Labels of 1-2 short words. At most one "note" per scene.
+- Split the explanation into MORE, SHORTER scenes (about one scene per 4-7 seconds of speech) instead of growing one diagram - each new idea gets a fresh, uncluttered drawing.
+- Give most scenes a sticker (they read better than small boxes here), targeted at the scene's key node.
+`;
+}
+
+/** How many full-screen board scenes a clip of this length gets. */
+function boardGuide(transcript: Transcript, space: FreeSpace): string {
+  const seconds = transcript.durationSeconds;
+  if (seconds < 15) return `\nCANVAS: this clip is short - keep every scene on the speaker (omit "canvas").\n`;
+  const max = seconds >= 45 ? "one, at most two" : "exactly one";
+  return `
+CANVAS - the full-screen black board ("canvas": "board"):
+Most scenes are drawn around the speaker ("canvas" omitted). But for ${max} scene(s) in this clip, the video cuts away from the speaker to a FULL-SCREEN BLACK canvas and the drawing fills the whole ${space.width}x${space.height} frame (light chalk-style ink on black), then cuts back to the speaker for the next scene. Use it for:
+- the most COMPLEX explanation in the clip: a multi-step flow or pipeline, an architecture with several parts, a tree/breakdown, or a chart with many points - the thing that would be cramped in the small space around the speaker;
+- a scene with at least ~6 seconds of speech, so the cut away is worth it.
+Never use it for a simple 1-3 node idea, for back-to-back scenes, or for the opening/closing lines (start and end on the speaker). A board scene may hold up to 6 nodes (bar <= 6, line <= 8, pie <= 5), should open with a "title" op, and should still have a sticker if there is a picturable anchor. Pace it to the speech exactly like any other scene - one stroke per idea, no filler.
+`;
 }
 
 function buildPrompt(transcript: Transcript, space: FreeSpace): string {
@@ -35,8 +72,8 @@ function buildPrompt(transcript: Transcript, space: FreeSpace): string {
   return `You are the art director of a hand-drawn explainer video. A person talks to camera; while they speak, a pen sketches a visual in the empty space around them - boxes being drawn, arrows connecting them, charts plotted bar by bar, things circled and underlined - each stroke landing exactly on the word that motivates it. Your job: decide WHAT gets drawn and ON WHICH WORD, and pick the visual FORM that best shows the structure of each idea.
 
 ${describeFreeSpace(space)}
-Layout is computed for you from that free space - never give coordinates. Keep at most ${budget} nodes (or chart data points: bar <= 6, line <= 8, pie <= 5) per scene so it stays readable; use more scenes instead.
-
+Layout is computed for you from that free space - never give coordinates. Keep at most ${budget} nodes per speaker scene (or chart data points: bar <= 6, line <= 8, pie <= 5) per scene so it stays readable; use more scenes instead.
+${narrowBandGuide(space)}${boardGuide(transcript, space)}
 Output ONLY one JSON object (no prose, no markdown fences):
 {
   "version": "2.0",
@@ -46,6 +83,7 @@ Output ONLY one JSON object (no prose, no markdown fences):
     "id": string,
     "layout": "flow" | "hub" | "stack" | "cycle" | "compare" | "tree" | "timeline" | "chart",
     "tone": "hype" | "technical" | "playful" | "warning" | "success" | "calm",
+    "canvas"?: "board",
     "chart"?: { "type": "bar" | "line" | "pie", "data": [{ "id": string, "label": string, "value": number }], "unit"?: string, "yLabel"?: string, "showValues"?: boolean },
     "nodes": [{ "id": string, "label": string, "shape"?: Shape, "icon"?: Icon, "color"?: Color, "group"?: "a"|"b" }],
     "edges": [{ "id": string, "from": nodeId, "to": nodeId, "label"?: string, "dashed"?: boolean, "bidirectional"?: boolean }],
@@ -168,6 +206,7 @@ How to fix each kind:
 
 Fix problems by re-timing, re-labelling or re-arranging - NEVER by deleting the scene, sticker, node or chart the finding is about. The revised video must still show every idea the speaker explains, with at least as many scenes and stickers as before.
 
+Keep each revised scene's "canvas" as it was (don't add or remove full-screen boards).
 Rules: revise ONLY scene(s) ${scenes.length ? scenes.join(", ") : "involved in the findings"}; every other scene is kept as it is automatically. Keep the scene ids of the scenes you revise (a scene you split out needs a new id). Word indices still refer to the full transcript.
 Output ONLY one JSON object of the form {"scenes": [ ...the revised scene(s), plus any new split-out scenes... ]} - do NOT repeat unchanged scenes.`;
 

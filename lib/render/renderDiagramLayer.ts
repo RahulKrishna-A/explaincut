@@ -3,7 +3,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
 import { createHash, randomUUID } from "node:crypto";
-import type { RenderPlan, RenderStyle } from "@/types/diagramPlan";
+import type { RenderPlan } from "@/types/diagramPlan";
 import type { Transcript } from "@/types/transcript";
 import type { CaptionSettings } from "@/types/renderOptions";
 
@@ -111,12 +111,11 @@ export async function renderCaptionLayer(
   transcript: Transcript,
   settings: CaptionSettings,
   video: { width: number; height: number; fps: number },
-  outputPath: string,
-  style: RenderStyle = "classic"
+  outputPath: string
 ): Promise<void> {
   await renderTransparentLayer(
     "Captions",
-    { words: transcript.words, settings, style, ...video, durationSeconds: transcript.durationSeconds },
+    { words: transcript.words, settings, ...video, durationSeconds: transcript.durationSeconds },
     outputPath
   );
 }
