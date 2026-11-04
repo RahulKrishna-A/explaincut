@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { SITE } from "@/lib/brand/site";
 import "./landing.css";
-import { DemoTabs, Faq } from "./LandingClient";
+import { BeforeAfter, DemoTabs, Faq } from "./LandingClient";
 import { LogoMark } from "./LogoMark";
 
 export const metadata: Metadata = {
@@ -68,39 +68,7 @@ export default function Landing() {
         </div>
 
         <div className="lp-shot-wrap">
-          <div className="lp-shot">
-            <div className="lp-stage">
-              <div className="lp-node" style={{ left: "7%", top: "16%" }}>User query</div>
-              <svg style={{ position: "absolute", left: "27%", top: "20%" }} width="40" height="14" viewBox="0 0 40 14"><path d="M0 7h34m-6-6 6 6-6 6" fill="none" stroke="oklch(0.58 0.16 45)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" /></svg>
-              <div className="lp-node on" style={{ left: "33%", top: "16%" }}>Agent</div>
-              <svg style={{ position: "absolute", left: "31%", top: "33%" }} width="14" height="48" viewBox="0 0 14 48"><path d="M7 0v42m-6-6 6 6 6-6" fill="none" stroke="oklch(0.58 0.16 45)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" /></svg>
-              <div className="lp-node" style={{ left: "22%", top: "50%" }}>Vector store</div>
-              <div className="lp-person lp-mono">speaker cutout</div>
-            </div>
-          </div>
-          <div className="lp-float" style={{ left: "max(-24px, calc((100vw - 1030px) / -2))", top: -28, display: "flex", flexDirection: "column", gap: 6 }}>
-            <span style={{ fontSize: 11, fontWeight: 600, color: "var(--muted-2)" }}>Transcript</span>
-            <div style={{ display: "flex", gap: 4, alignItems: "center", fontSize: 14 }}>
-              <span>written to a</span>
-              <span style={{ background: "var(--accent-soft)", color: "var(--accent-ink)", fontWeight: 600, padding: "2px 8px", borderRadius: 8 }}>vector</span>
-              <span>store</span>
-            </div>
-          </div>
-          <div className="lp-float" style={{ right: "max(-24px, calc((100vw - 1030px) / -2))", top: "6%", display: "flex", alignItems: "center", gap: 10 }}>
-            <span style={{ width: 32, height: 32, borderRadius: 6, background: "var(--accent-soft)", display: "grid", placeItems: "center" }}>
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="oklch(0.5 0.16 45)" strokeWidth="2" strokeLinecap="round"><rect x="3" y="3" width="7" height="7" rx="1.5" /><rect x="14" y="14" width="7" height="7" rx="1.5" /><path d="M10 6.5h4a3 3 0 0 1 3 3V14" /></svg>
-            </span>
-            <div style={{ display: "flex", flexDirection: "column" }}>
-              <span style={{ fontSize: 13, fontWeight: 600 }}>Node drawn</span>
-              <span className="lp-muted" style={{ fontSize: 12 }}>“Vector store” · 0:14.6</span>
-            </div>
-          </div>
-          <div className="lp-float" style={{ right: "6%", bottom: -26, padding: "8px 16px 8px 8px", display: "flex", alignItems: "center", gap: 10 }}>
-            <span style={{ width: 28, height: 28, borderRadius: 6, background: "oklch(0.94 0.06 155)", display: "grid", placeItems: "center" }}>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="oklch(0.45 0.13 155)" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6 9 17l-5-5" /></svg>
-            </span>
-            <span style={{ fontSize: 14, fontWeight: 500 }}>Ready to download</span>
-          </div>
+          <BeforeAfter />
         </div>
 
         <div className="lp-chips">

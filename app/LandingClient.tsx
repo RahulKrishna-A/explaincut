@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 const FAQ: [string, string][] = [
   ["What kind of video works best?", "A single webcam take with a plain background. No screen share or slides."],
@@ -91,5 +91,82 @@ export function DemoTabs() {
         </div>
       </div>
     </>
+  );
+}
+
+const AFTER_CLIPS = [
+  { src: "/demo/after-caching", label: "How caching works" },
+  { src: "/demo/after-rag", label: "RAG, step by step" },
+  { src: "/demo/after-coaching", label: "Where coaching helps" },
+];
+
+// Before: the raw webcam take. After: a fanned deck of ExplainCut renders.
+// The front card plays once, then the deck rotates and the next card comes forward.
+export function BeforeAfter() {
+  const [front, setFront] = useState(0);
+  const before = useRef<HTMLVideoElement>(null);
+  const vids = useRef<(HTMLVideoElement | null)[]>([]);
+
+  useEffect(() => {
+    const v = vids.current[front];
+    if (!v) return;
+    v.currentTime = 0;
+    v.play().catch(() => {});
+    // The first clip is the same moment as the "before" take, so keep them in step.
+    if (front === 0 && before.current) {
+      before.current.currentTime = 0;
+      before.current.play().catch(() => {});
+    }
+  }, [front]);
+
+  const next = () => setFront((f) => (f + 1) % AFTER_CLIPS.length);
+
+  return (
+    <div className="ba">
+      <figure className="ba-col">
+        <div className="ba-card">
+          <video ref={before} src="/demo/before.mp4" poster="/demo/before.jpg" muted loop playsInline autoPlay preload="auto" />
+          <span className="ba-tag">Before</span>
+        </div>
+        <figcaption className="lp-muted">Your raw webcam take</figcaption>
+      </figure>
+
+      <div className="ba-arrow" aria-hidden>
+        <svg width="56" height="20" viewBox="0 0 56 20"><path d="M2 10h48m-8-8 8 8-8 8" fill="none" stroke="oklch(0.58 0.16 45)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" /></svg>
+        <span className="lp-mono">ExplainCut</span>
+      </div>
+
+      <figure className="ba-col">
+        <div className="ba-deck">
+          {AFTER_CLIPS.map((c, i) => {
+            const pos = (i - front + AFTER_CLIPS.length) % AFTER_CLIPS.length;
+            return (
+              <button
+                key={c.src}
+                type="button"
+                className="ba-card ba-deck-card"
+                data-pos={pos}
+                onClick={() => (pos === 0 ? next() : setFront(i))}
+                aria-label={pos === 0 ? `Next example` : `Show ${c.label}`}
+              >
+                <video
+                  ref={(el) => { vids.current[i] = el; }}
+                  src={`${c.src}.mp4`}
+                  poster={`${c.src}.jpg`}
+                  muted
+                  playsInline
+                  preload="auto"
+                  autoPlay={i === 0}
+                  loop={pos !== 0}
+                  onEnded={pos === 0 ? next : undefined}
+                />
+                <span className="ba-tag on">After</span>
+              </button>
+            );
+          })}
+        </div>
+        <figcaption className="lp-muted">{AFTER_CLIPS[front].label}</figcaption>
+      </figure>
+    </div>
   );
 }
