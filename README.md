@@ -9,7 +9,11 @@ composites it behind you (speaker cut out via SAM 3.1) in the final video.
 Built for the Meta Global AI Developer Hackathon, one day, running entirely
 on Meta's Model API.
 
-## Setup
+## Running locally
+
+Prerequisites: Node 22+ and a Meta Model API key from
+[dev.meta.ai](https://dev.meta.ai/docs/overview). No system FFmpeg install is
+needed - `ffmpeg-static` vendors its own binary.
 
 ```bash
 npm install
@@ -22,7 +26,113 @@ straight to [/app](http://localhost:3000/app)). Choose caption settings if you
 like, then drop a short (30-60s) webcam clip - processing starts as soon as the
 file is picked; there's no separate Generate step.
 
-Production build: `npm run build && npm start`.
+Production build: `npm run build && npm start`. See `.env.example` for the
+optional tuning vars (`SAM_CONCURRENCY`, `SPARK_FIX_DRAFTS`, `META_TIMEOUT_MS`,
+`JOB_DATA_DIR`). `Dockerfile` / `fly.toml` / `railway.json` cover running it as
+a long-lived container instead.
+
+Don't have a key yet, or want to check the plumbing without spending API
+calls? See [Testing without API keys](#testing-without-api-keys) below.
+
+## The 5 AI models
+
+Every model is reached through Meta's Model API with the same key
+(`MODEL_API_KEY`, base URL `api.meta.ai/v1`). Each one has a narrow, specific
+job. None of them is trusted blindly: the code checks every answer and has a
+fallback if a model fails. Every call times out after 4 minutes
+(`META_TIMEOUT_MS`) so a stuck request can't freeze a job.
+
+### Muse Voice — `muse-voice-transcribe-1.0` (the ears)
+
+**Job:** turns your speech into text and tells us exactly when each word
+starts and ends. Those word times are the backbone of the whole app: every
+stroke is later pinned to one of them.
+
+- **Gets** the audio of your clip, pulled out by FFmpeg as a 16 kHz WAV file.
+- **Gives back** the full transcript plus a list of words with start and end
+  times.
+- **Called** once per clip, in step 2. Endpoint `/asr/transcribe`.
+- **If it fails** - if words come back without times, the app finds where
+  you're talking with FFmpeg's silence detector and spreads the words over
+  those stretches.
+
+### SAM 3.1 — `sam-3.1` (the scissors)
+
+**Job:** finds you in a picture. Given a still frame and the single word
+"person", it returns a mask: a black-and-white image that's white where you
+are and black everywhere else.
+
+- **Gets** one still frame every 0.4 seconds of video, plus the prompt
+  `person`.
+- **Gives back** a 1-bit mask and its position. If it finds several people,
+  the biggest one is kept.
+- **Called** once per frame in step 3, six at a time. A 30-second clip is
+  about 75 calls. Uses the OpenAI SDK pointed at Meta, and Meta's
+  `@meta-sam/parser` to decode the stream.
+- **If it fails** - it retries the frame, then uses an oval in the middle of
+  the frame as a rough guess. If every frame fails, the drawing goes on top of
+  you instead of behind, and the result screen says so.
+
+### Muse Spark — `muse-spark-1.3` (the art director)
+
+**Job:** the creative brain. It reads your words and decides what gets drawn,
+in what form (a flow, a tree, a chart...), in what mood, and on which word
+each stroke appears. Later, it also fixes its own plan when the reviewer
+finds problems.
+
+- **Gets** a long instruction, the transcript with every word numbered, a
+  description of the empty space, and two example plans.
+- **Gives back** a plan written as JSON: scenes, boxes, arrows and a timed
+  list of pen actions. It never gives positions or sizes.
+- **Called** step 5 to plan (up to 2 tries), and step 10 to re-plan flagged
+  scenes. Endpoint `/chat/completions`.
+- **If it fails** - broken output gets one retry. If that fails too, a
+  built-in sample plan is spread across your real transcript, so you still
+  get a video.
+
+### Muse Image — `muse-image-1.0` (the illustrator)
+
+**Job:** draws the stickers: small, colourful illustrations like a rocket for
+"speed" or a brain for "memory" that pop onto the screen next to the diagram.
+
+- **Gets** a prompt built from Spark's art direction, plus an art style chosen
+  by the scene's tone, and a request for a flat green background.
+- **Gives back** a 1024x1024 PNG. It can't make transparent images, so the
+  app removes the green itself.
+- **Called** step 6, three times per sticker (six if the first three are
+  weak). About $0.01 per image. Endpoint `/images/generations`.
+- **If it fails** - that sticker is simply left out. The rest of the video is
+  unaffected.
+
+### Muse Wonder — `muse-wonder-1.0` (the critic)
+
+**Job:** the one model that looks at pictures and judges them. It has three
+separate jobs: picking the best sticker out of three, reviewing frames of the
+finished video like a picky editor, and later checking whether each problem
+it raised was actually fixed.
+
+- **Gets** images (sticker candidates or video frames) plus text: the
+  transcript and a schedule of what's drawn when.
+- **Gives back** scores from 0 to 10, or a list of problems with a severity
+  and a suggested fix, or a fixed / not fixed verdict for each problem.
+- **Called** steps 6 and 10. Uses "high" reasoning effort for reviews,
+  "medium" for sticker picks. Endpoint `/responses`.
+- **If it fails** - sticker picking falls back to the first candidate. The
+  review still runs its exact, measured checks without it.
+
+### Roughly how many AI calls one clip makes
+
+| Model | What for | 30-second clip |
+| --- | --- | --- |
+| Muse Voice | Transcribe the audio | 1 |
+| SAM 3.1 | One mask per sampled frame | ~75 |
+| Muse Spark | Plan, plus one re-plan in the review | 2-4 |
+| Muse Image | 3 candidates for each new sticker | 12-24 |
+| Muse Wonder | Sticker picks, review, verification | ~6 |
+
+An estimate, assuming a clip with 4 stickers, the self-review on, and some
+retries. Stickers are saved by subject and tone, so a sticker the app has
+drawn before costs nothing the next time.
 
 ## Architecture
 
