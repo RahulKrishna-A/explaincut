@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore
 import type { JobStage, JobStatus } from "@/types/job";
 import { CAPTION_FONT_LABELS, DEFAULT_RENDER_OPTIONS, type RenderOptions } from "@/types/renderOptions";
 import { CaptionSettingsPanel } from "./CaptionSettingsPanel";
+import { Waiting } from "./Waiting";
 import { ReviewLive, ReviewReport, SelfReviewToggle, reviewSummary } from "./SelfReview";
 
 const OPTIONS_KEY = "explaincut.renderOptions";
@@ -81,6 +82,16 @@ function stageNumber(stage: JobStage | undefined, pipeline: PipelineStep[]): num
   return i === -1 ? 0 : i + 1;
 }
 
+/** The API's own error message when it sent one, else a generic fallback. */
+async function errorFrom(res: Response, fallback: string): Promise<string> {
+  try {
+    const body = (await res.json()) as { error?: unknown };
+    return typeof body.error === "string" ? body.error : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
 function formatBytes(n: number): string {
   if (n >= 1e9) return `${(n / 1e9).toFixed(1)} GB`;
   if (n >= 1e6) return `${Math.round(n / 1e6)} MB`;
@@ -134,12 +145,17 @@ export default function Home() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
   const [elapsed, setElapsed] = useState(0);
+  const [notify, setNotify] = useState(false);
   const [outputMeta, setOutputMeta] = useState<{ duration: number; width: number; height: number } | null>(null);
   const savedOptions = useSyncExternalStore(subscribeOptions, readSavedOptions, () => null);
   const options = useMemo(() => parseSavedOptions(savedOptions), [savedOptions]);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   // Result screen: which cut is playing (the fixed one, or the first cut before the self-review).
   const [variant, setVariant] = useState<"after" | "before">("after");
+  // The first cut is shown while the self-review is still running; these track
+  // which cut the player has loaded and let the user switch to the fixed one.
+  const [playingCut, setPlayingCut] = useState<"first" | "final">("first");
+  const [cutRev, setCutRev] = useState(0);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const pendingSeekRef = useRef<{ time: number; play: boolean } | null>(null);
   const startedAtRef = useRef<number>(0);
@@ -178,15 +194,28 @@ export default function Home() {
   const pollStatus = useCallback(
     (id: string) => {
       stopPolling();
+      let inFlight = false;
+      let latest = 0;
       pollRef.current = setInterval(async () => {
-        const res = await fetch(`/api/status/${id}`);
-        if (!res.ok) return;
-        const status = (await res.json()) as JobStatus;
-        setJob(status);
-        if (status.stage === "done" || status.stage === "error") {
-          stopPolling();
-          setBusy(false);
-          setElapsed((Date.now() - startedAtRef.current) / 1000);
+        // One request at a time, and never let an older status overwrite a newer one.
+        if (inFlight) return;
+        inFlight = true;
+        try {
+          const res = await fetch(`/api/status/${id}`, { cache: "no-store" });
+          if (!res.ok) return;
+          const status = (await res.json()) as JobStatus;
+          if (status.updatedAt < latest) return;
+          latest = status.updatedAt;
+          setJob(status);
+          if (status.stage === "done" || status.stage === "error") {
+            stopPolling();
+            setBusy(false);
+            setElapsed((Date.now() - startedAtRef.current) / 1000);
+          }
+        } catch {
+          // Network blip - the next tick tries again.
+        } finally {
+          inFlight = false;
         }
       }, 1500);
     },
@@ -200,6 +229,7 @@ export default function Home() {
       setJob(null);
       setOutputMeta(null);
       setVariant("after");
+      setPlayingCut("first");
       setElapsed(0);
       startedAtRef.current = Date.now();
 
@@ -207,7 +237,7 @@ export default function Home() {
         const form = new FormData();
         form.append("video", chosen);
         const uploadRes = await fetch("/api/upload", { method: "POST", body: form });
-        if (!uploadRes.ok) throw new Error("Upload failed");
+        if (!uploadRes.ok) throw new Error(await errorFrom(uploadRes, "Upload failed"));
         const { jobId: newJobId } = (await uploadRes.json()) as { jobId: string };
         setJobId(newJobId);
 
@@ -216,7 +246,7 @@ export default function Home() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ jobId: newJobId, options }),
         });
-        if (!renderRes.ok) throw new Error("Failed to start processing");
+        if (!renderRes.ok) throw new Error(await errorFrom(renderRes, "Failed to start processing"));
 
         pollStatus(newJobId);
       } catch (err) {
@@ -252,12 +282,16 @@ export default function Home() {
     setErrorMessage(null);
     setOutputMeta(null);
     setVariant("after");
+    setPlayingCut("first");
     setElapsed(0);
     if (inputRef.current) inputRef.current.value = "";
   }, [stopPolling, setPreview]);
 
   const failed = job?.stage === "error" || (!!errorMessage && !!file);
-  const done = job?.stage === "done" && !!jobId;
+  // The result screen opens as soon as the first cut exists; the self-review keeps running on it.
+  const done = !!jobId && !!job?.outputReady && job.stage !== "error";
+  const reviewRunning = done && (job?.stage === "reviewing" || job?.stage === "correcting");
+  const fixedCutWaiting = job?.stage === "done" && !!job.selfReview?.hasBefore && playingCut === "first";
   const phase: Phase = done ? "result" : busy || failed || job ? "generate" : "upload";
 
   const reviewOn = (job?.options ?? options).selfReview.enabled;
@@ -267,6 +301,27 @@ export default function Home() {
   const reviewing = job?.stage === "reviewing" || job?.stage === "correcting";
   const lastReviewLog = job?.selfReview?.log[job.selfReview.log.length - 1]?.text;
   const liveLabel = reviewing && lastReviewLog ? lastReviewLog : active ? active.live : "Uploading your clip";
+
+  const toggleNotify = useCallback(() => {
+    if (!notify && typeof Notification !== "undefined" && Notification.permission === "default") {
+      void Notification.requestPermission();
+    }
+    setNotify((v) => !v);
+  }, [notify]);
+
+  // Ping the user when the first cut is ready, if they asked and are looking elsewhere.
+  const notifiedRef = useRef(false);
+  useEffect(() => {
+    if (!done) {
+      notifiedRef.current = false;
+      return;
+    }
+    if (!notify || notifiedRef.current) return;
+    notifiedRef.current = true;
+    if (typeof Notification !== "undefined" && Notification.permission === "granted" && document.hidden) {
+      new Notification("Your ExplainCut is ready", { body: file?.name ?? "Your cut is ready to watch." });
+    }
+  }, [done, notify, file]);
 
   /** Switch between the fixed cut and the first cut, keeping the playhead where it was. */
   const showVariant = (next: "after" | "before", time?: number, play = false) => {
@@ -363,6 +418,7 @@ export default function Home() {
 
       {phase === "generate" ? (
         <main className="ec-main" style={{ gap: 16 }}>
+          {failed ? (
           <div className="ec-card" style={{ maxWidth: 640 }}>
             <div className="ec-file-row">
               {previewUrl ? (
@@ -396,44 +452,19 @@ export default function Home() {
                   </button>
                 </div>
               </div>
-            ) : (
-              <div className="ec-progress-well">
-                <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 12 }}>
-                  <div className="ec-big">
-                    {n}
-                    <span style={{ color: "var(--accent)" }}>/{PIPELINE.length}</span>
-                  </div>
-                  <div
-                    style={{
-                      textAlign: "right",
-                      fontSize: 13,
-                      color: "var(--muted-2)",
-                      fontVariantNumeric: "tabular-nums",
-                    }}
-                  >
-                    Elapsed {formatClock(elapsed)}
-                  </div>
-                </div>
-                <div className="ec-bar" role="progressbar" aria-valuemin={0} aria-valuemax={PIPELINE.length} aria-valuenow={n}>
-                  {PIPELINE.map((p, i) => (
-                    <span
-                      key={p.stage}
-                      data-state={i < n - 1 ? "done" : i === n - 1 ? "current" : "todo"}
-                    />
-                  ))}
-                </div>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, fontSize: 14 }}>
-                  <span style={{ display: "flex", alignItems: "center", gap: 8, fontWeight: 600 }}>
-                    <span className="ec-live-dot" />
-                    {liveLabel.replace(/[.…]+$/, "")}…
-                  </span>
-                  <span style={{ color: "var(--muted-2)", whiteSpace: "nowrap" }}>
-                    Step {Math.max(n, 1)} of {PIPELINE.length}
-                  </span>
-                </div>
-              </div>
-            )}
+            ) : null}
           </div>
+          ) : (
+            <Waiting
+              stage={job?.stage}
+              stageStartedAt={job?.stageStartedAt}
+              reviewOn={reviewOn}
+              liveLabel={liveLabel}
+              notify={notify}
+              onToggleNotify={toggleNotify}
+              onCancel={startOver}
+            />
+          )}
           {!failed && jobId && job?.selfReview ? <ReviewLive jobId={jobId} review={job.selfReview} /> : null}
         </main>
       ) : null}
@@ -442,7 +473,26 @@ export default function Home() {
         <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
           <div className="ec-result">
             <div className="ec-card" style={{ alignSelf: "start", display: "flex", flexDirection: "column", gap: 10 }}>
-              {job?.selfReview?.hasBefore ? (
+              {fixedCutWaiting ? (
+                <div className="ec-variant ec-fixed-ready" role="status">
+                  <span>
+                    <b>The fixed cut is ready.</b> {reviewSummary(job?.selfReview, true)} by the self-review.
+                  </span>
+                  <button
+                    type="button"
+                    className="ec-btn ec-btn-dark"
+                    style={{ padding: "8px 14px", fontSize: 13 }}
+                    onClick={() => {
+                      const v = videoRef.current;
+                      pendingSeekRef.current = { time: v?.currentTime ?? 0, play: !!v && !v.paused };
+                      setCutRev((r) => r + 1);
+                    }}
+                  >
+                    Watch the fixed cut
+                  </button>
+                </div>
+              ) : null}
+              {job?.selfReview?.hasBefore && playingCut === "final" ? (
                 <div className="ec-variant">
                   <div className="ec-seg" role="radiogroup" aria-label="Which cut to play">
                     <button type="button" role="radio" aria-checked={variant === "after"} data-on={variant === "after"} onClick={() => showVariant("after")}>
@@ -461,9 +511,10 @@ export default function Home() {
                 ref={videoRef}
                 className="ec-video"
                 controls
-                src={`/api/download/${jobId}${variant === "before" ? "?variant=before" : ""}`}
+                src={`/api/download/${jobId}?cut=${cutRev}${variant === "before" ? "&variant=before" : ""}`}
                 onLoadedMetadata={(e) => {
                   const v = e.currentTarget;
+                  setPlayingCut(job?.stage === "done" ? "final" : "first");
                   setOutputMeta({ duration: v.duration, width: v.videoWidth, height: v.videoHeight });
                   const seek = pendingSeekRef.current;
                   pendingSeekRef.current = null;
@@ -483,7 +534,14 @@ export default function Home() {
                   </svg>
                   Ready
                 </span>
-                <h2 style={{ fontSize: 26, letterSpacing: "-0.03em", margin: 0 }}>Your cut is ready</h2>
+                <h2 style={{ fontSize: 26, letterSpacing: "-0.03em", margin: 0 }}>
+                  {reviewRunning ? "Your first cut is ready" : "Your cut is ready"}
+                </h2>
+                {reviewRunning ? (
+                  <span style={{ fontSize: 13, color: "var(--muted)" }}>
+                    Watch it now - the self-review is still checking it, and any fixes will be offered here.
+                  </span>
+                ) : null}
                 {file ? (
                   <span style={{ fontSize: 13, color: "var(--muted-2)", wordBreak: "break-all" }}>{file.name}</span>
                 ) : null}
@@ -528,7 +586,7 @@ export default function Home() {
                     <path d="M12 3v12m-5-5 5 5 5-5" />
                     <path d="M5 21h14" />
                   </svg>
-                  Download MP4
+                  {reviewRunning ? "Download first cut" : "Download MP4"}
                 </a>
                 <button className="ec-btn ec-btn-ghost" onClick={startOver}>
                   Start over
@@ -536,7 +594,11 @@ export default function Home() {
               </div>
             </div>
           </div>
-          {job?.selfReview ? (
+          {reviewRunning && job?.selfReview ? (
+            <div style={{ width: "100%", display: "flex", justifyContent: "center", padding: "0 16px 32px" }}>
+              <ReviewLive jobId={jobId} review={job.selfReview} />
+            </div>
+          ) : job?.stage === "done" && job.selfReview ? (
             <ReviewReport
               jobId={jobId}
               review={job.selfReview}

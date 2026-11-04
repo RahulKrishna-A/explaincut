@@ -23,11 +23,9 @@ import { buildRenderPlan } from "../lib/layout/buildRenderPlan";
 import { validateAndResolveDiagramPlan } from "../lib/diagramPlan/validate";
 import { buildSmoothedMaskVideo, type MaskSample } from "../lib/ffmpeg/maskToAlpha";
 import { composeDiagramBehindPerson } from "../lib/ffmpeg/composeMaskedSpeaker";
-import { renderCaptionLayer } from "../lib/render/renderDiagramLayer";
+import { renderCaptionLayer, renderTransparentLayer } from "../lib/render/renderDiagramLayer";
 import { captionMetrics, reserveCaptionBand } from "../lib/captions/buildCaptions";
 import { parseRenderOptions } from "../lib/renderOptions";
-import { execFile } from "node:child_process";
-import { randomUUID } from "node:crypto";
 import type { Transcript } from "../types/transcript";
 import type { RenderPlan } from "../types/diagramPlan";
 
@@ -36,22 +34,8 @@ function arg(name: string): string | undefined {
   return i >= 0 ? process.argv[i + 1] : undefined;
 }
 
-async function renderLayer(plan: RenderPlan, out: string, showRegions: boolean) {
-  const propsPath = path.join(path.dirname(out), `.remotion-props-${randomUUID()}.json`);
-  await fs.writeFile(propsPath, JSON.stringify({ renderPlan: plan, showRegions }));
-  const bin = path.resolve(process.cwd(), "node_modules/.bin/remotion");
-  try {
-    await new Promise<void>((resolve, reject) =>
-      execFile(
-        bin,
-        ["render", "ExplainCut", out, `--props=${propsPath}`, "--codec=prores", "--prores-profile=4444", "--pixel-format=yuva444p10le"],
-        { maxBuffer: 1024 * 1024 * 64 },
-        (err, _o, stderr) => (err ? reject(new Error(stderr)) : resolve())
-      )
-    );
-  } finally {
-    await fs.unlink(propsPath).catch(() => {});
-  }
+function renderLayer(plan: RenderPlan, out: string, showRegions: boolean) {
+  return renderTransparentLayer("ExplainCut", { renderPlan: plan, showRegions }, out);
 }
 
 async function main() {

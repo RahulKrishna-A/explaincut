@@ -23,5 +23,9 @@ export interface JobStatus {
   updatedAt: number;
   outputReady: boolean;
   options?: RenderOptions;
+  /** When the current stage began (ms epoch). */
+  stageStartedAt?: number;
+  /** Wall-clock milliseconds spent in each stage so far. */
+  timings?: Partial<Record<JobStage, number>>;
   selfReview?: SelfReview;
 }

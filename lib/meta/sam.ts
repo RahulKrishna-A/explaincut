@@ -9,15 +9,20 @@ import {
 
 const MODEL_ID = "sam-3.1";
 
+let cachedClient: OpenAI | null = null;
+
+/** One client for the whole process - a clip makes dozens of SAM calls. */
 function client(): OpenAI {
+  if (cachedClient) return cachedClient;
   const apiKey = process.env.MODEL_API_KEY;
   if (!apiKey) {
     throw new Error("MODEL_API_KEY is not set. Add it to .env.local (see .env.example).");
   }
-  return new OpenAI({
+  cachedClient = new OpenAI({
     apiKey,
     baseURL: process.env.MODEL_API_BASE_URL ?? "https://api.meta.ai/v1",
   });
+  return cachedClient;
 }
 
 /** Builds a full-frame grayscale PNG (white=person) from a mask record's cropped raster + bounds. */

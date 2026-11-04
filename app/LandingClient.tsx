@@ -4,10 +4,11 @@ import { useState } from "react";
 
 const FAQ: [string, string][] = [
   ["What kind of video works best?", "A single webcam take with a plain background. No screen share or slides."],
-  ["Are the diagrams AI-generated images?", "No. Muse Spark writes a structured plan of nodes, arrows and marks. Remotion draws it in code as hand-drawn sketches, so every label matches what you said."],
-  ["Which diagram types are supported?", "Five scene layouts: flow, hub, stack, cycle and compare. A video can use more than one."],
+  ["Are the diagrams AI-generated images?", "No. Muse Spark writes a structured plan of nodes, arrows, charts and marks, and Remotion draws it in code as hand-drawn sketches, so every label matches what you said. The only generated images are small optional stickers from Muse Image."],
+  ["Which diagram types are supported?", "Flow, hub, stack, cycle, compare, tree and timeline layouts, plus hand-drawn bar, line and pie charts when you talk about numbers. A video mixes them, one per idea."],
+  ["Can it add captions?", "Yes. Word-timed captions in a black box near the bottom, on by default. Pick the font and size before you upload, or switch them off."],
   ["Where does it run?", "Locally on your machine. Your footage is sent only to the model APIs that process it."],
-  ["Does it review the result?", "Optionally. When the review pass is enabled, Muse Wonder checks sampled frames and lists problems with a severity. It reports only; it does not fix them."],
+  ["Does it review the result?", "Yes, by default. Muse Wonder watches sampled frames and exact checks compare every drawing with your words and your position. Muse Spark re-plans anything that's off, the video is re-rendered, and each fix is verified. You can compare before and after, or switch the review off."],
 ];
 
 export function Faq() {

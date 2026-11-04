@@ -2,7 +2,7 @@ import Link from "next/link";
 import "./landing.css";
 import { DemoTabs, Faq } from "./LandingClient";
 
-const POWERED = ["Muse Spark", "Muse Voice Transcribe", "SAM 3.1", "Muse Wonder", "Remotion"];
+const POWERED = ["Muse Spark", "Muse Voice Transcribe", "SAM 3.1", "Muse Wonder", "Muse Image", "Remotion"];
 const MADE_FOR = ["Dev tutorials", "Lectures", "Onboarding", "Conference talks", "Course videos", "Team explainers", "Research walkthroughs", "And more"];
 const BARS = [30, 55, 40, 80, 35, 90, 50, 70, 45, 85, 60, 95, 40];
 const BAR_ON = [1, 3, 5, 7, 9, 11];
@@ -185,7 +185,7 @@ export default function Landing() {
                   </div>
                 ))}
               </div>
-              <div className="lp-feat"><b>Five scene layouts</b><span>Flow, hub, stack, cycle and compare, chosen per scene of your explanation.</span></div>
+              <div className="lp-feat"><b>The right picture for each idea</b><span>Flows, hubs, stacks, cycles, comparisons, trees, timelines and hand-drawn bar, line and pie charts, chosen per scene of your explanation.</span></div>
             </div>
             <div className="lp-card">
               <div className="lp-viz tall lp-mono" style={{ background: "var(--ink)", color: "oklch(0.92 0.005 70)", flexDirection: "column", padding: "20px 22px", fontSize: 12, lineHeight: 1.7, overflow: "hidden", justifyContent: "flex-start" }}>
@@ -218,7 +218,7 @@ export default function Landing() {
                   </div>
                 ))}
               </div>
-              <div className="lp-feat"><b>An optional review</b><span>Muse Wonder can check sampled frames and flag problems before you share.</span></div>
+              <div className="lp-feat"><b>A review that fixes itself</b><span>Muse Wonder checks relevance, timing and speaker overlap; Muse Spark re-plans what&apos;s off and the video is re-rendered before you see it.</span></div>
             </div>
           </div>
         </div>

@@ -48,6 +48,9 @@ export async function composeDiagramBehindPerson(
     "-c:a",
     "aac",
     "-shortest",
+    // moov atom up front: playback starts before the whole file has downloaded.
+    "-movflags",
+    "+faststart",
     outputPath,
   ]);
 }
@@ -86,6 +89,9 @@ export async function composeDiagramOverlay(
     "-c:a",
     "aac",
     "-shortest",
+    // moov atom up front: playback starts before the whole file has downloaded.
+    "-movflags",
+    "+faststart",
     outputPath,
   ]);
 }

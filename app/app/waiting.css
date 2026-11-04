@@ -1,0 +1,53 @@
+/* Waiting-screen scene animations (from the Claude Design "Generating — waiting" handoff). */
+.ecw-abs { position: absolute; }
+@keyframes ecFade { from { opacity: 0; transform: scale(.985); } to { opacity: 1; transform: none; } }
+@keyframes ecWave { 0%, 100% { transform: scaleY(.2); } 50% { transform: scaleY(1); } }
+@keyframes ecA { 0%,6% { opacity: 0; transform: translateY(10px) scale(.96); } 12%,86% { opacity: 1; transform: none; } 93%,100% { opacity: 0; transform: none; } }
+@keyframes ecB { 0%,26% { opacity: 0; transform: translateY(10px) scale(.96); } 32%,86% { opacity: 1; transform: none; } 93%,100% { opacity: 0; transform: none; } }
+@keyframes ecC { 0%,48% { opacity: 0; transform: translateY(10px) scale(.96); } 54%,86% { opacity: 1; transform: none; } 93%,100% { opacity: 0; transform: none; } }
+@keyframes ecD1 { 0%,16% { stroke-dashoffset: 60; opacity: 1; } 26%,86% { stroke-dashoffset: 0; opacity: 1; } 93%,100% { stroke-dashoffset: 0; opacity: 0; } }
+@keyframes ecD2 { 0%,38% { stroke-dashoffset: 60; opacity: 1; } 48%,86% { stroke-dashoffset: 0; opacity: 1; } 93%,100% { stroke-dashoffset: 0; opacity: 0; } }
+@keyframes ecCapA { 0%,5% { opacity: 0; transform: translateY(6px); } 9%,24% { opacity: 1; transform: none; } 28%,100% { opacity: 0; transform: translateY(-6px); } }
+@keyframes ecCapB { 0%,26% { opacity: 0; transform: translateY(6px); } 30%,46% { opacity: 1; transform: none; } 50%,100% { opacity: 0; transform: translateY(-6px); } }
+@keyframes ecCapC { 0%,48% { opacity: 0; transform: translateY(6px); } 52%,84% { opacity: 1; transform: none; } 90%,100% { opacity: 0; transform: translateY(-6px); } }
+@keyframes ecReveal { 0% { height: 0; } 70%,100% { height: 100%; } }
+@keyframes ecScanLine { 0% { top: 0; opacity: 1; } 70% { top: 100%; opacity: 1; } 72%,100% { top: 100%; opacity: 0; } }
+@keyframes ecStrip { from { transform: translateX(0); } to { transform: translateX(-50%); } }
+@keyframes ecBack { 0%,10% { transform: translate(-64px,-40px); } 36%,74% { transform: none; } 96%,100% { transform: translate(-64px,-40px); } }
+@keyframes ecFront { 0%,10% { transform: translate(64px,40px); } 36%,74% { transform: none; } 96%,100% { transform: translate(64px,40px); } }
+@keyframes ecLbl { 0%,14% { opacity: 1; } 30%,80% { opacity: 0; } 92%,100% { opacity: 1; } }
+@keyframes ecRet { 0%,16% { left: 8%; top: 16%; } 26%,44% { left: 30%; top: 56%; } 54%,72% { left: 60%; top: 22%; } 82%,100% { left: 8%; top: 16%; } }
+@keyframes ecK1 { 0%,14% { opacity: 0; transform: translateX(-8px); } 20%,92% { opacity: 1; transform: none; } 100% { opacity: 0; } }
+@keyframes ecK2 { 0%,42% { opacity: 0; transform: translateX(-8px); } 48%,92% { opacity: 1; transform: none; } 100% { opacity: 0; } }
+@keyframes ecK3 { 0%,70% { opacity: 0; transform: translateX(-8px); } 76%,92% { opacity: 1; transform: none; } 100% { opacity: 0; } }
+@keyframes ecBreath { 0%,100% { transform: scale(1); opacity: .55; } 50% { transform: scale(1.8); opacity: 0; } }
+
+.ecw-card { max-width: 780px; }
+.ecw-stage { position: relative; height: 270px; border-radius: 10px; overflow: hidden; background: oklch(0.955 0.012 75); }
+.ecw-scene { position: absolute; inset: 0; animation: ecFade .4s ease; }
+.ecw-chip { position: absolute; left: 14px; top: 12px; z-index: 5; display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 600; background: rgba(255,255,255,.9); padding: 5px 10px; border-radius: 6px; }
+.ecw-chip span + span { color: var(--muted-2); font-weight: 500; }
+.ecw-pill { padding: 11px 16px; border-radius: 8px; font-weight: 600; font-size: 16px; background: #fff; color: var(--ink); box-shadow: 0 6px 18px -8px rgba(50,35,20,.28); opacity: 0; }
+.ecw-pill[data-accent="true"] { background: var(--accent); color: #fff; }
+.ecw-mini { padding: 6px 10px; border-radius: 6px; background: #fff; font-size: 12px; font-weight: 600; box-shadow: 0 6px 18px -8px rgba(50,35,20,.28); }
+.ecw-mini[data-accent="true"] { background: var(--accent); color: #fff; }
+.ecw-stat { background: #fff; border-radius: 8px; padding: 10px 12px; box-shadow: 0 6px 18px -8px rgba(50,35,20,.28); }
+.ecw-stat small { display: block; font-size: 11px; color: var(--muted-2); }
+.ecw-stat b { font-family: var(--font-mono), monospace; font-size: 18px; font-weight: 500; }
+.ecw-stripe { background: repeating-linear-gradient(135deg, oklch(0.8 0.01 70) 0 8px, oklch(0.84 0.01 70) 8px 16px); }
+.ecw-seg { font: inherit; border: 0; background: transparent; padding: 0; display: flex; flex-direction: column; gap: 6px; text-align: left; min-width: 0; }
+.ecw-seg-track { position: relative; display: block; height: 8px; border-radius: 4px; background: var(--track); overflow: hidden; }
+.ecw-seg-fill { position: absolute; left: 0; top: 0; bottom: 0; background: var(--accent); border-radius: 4px; transition: width .8s ease; }
+.ecw-seg-name { font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ecw-dot { position: relative; width: 8px; height: 8px; border-radius: 99px; background: var(--accent); flex-shrink: 0; }
+.ecw-dot::after { content: ""; position: absolute; inset: 0; border-radius: 99px; background: var(--accent); animation: ecBreath 2.4s ease-out infinite; }
+.ecw-tip { display: flex; gap: 12px; align-items: flex-start; padding: 12px 14px; border-radius: 10px; background: oklch(0.97 0.008 75); font-size: 14px; line-height: 1.5; color: oklch(0.35 0.012 70); }
+.ecw-tip > b { flex: none; font-size: 12px; font-weight: 600; color: var(--accent-ink); background: var(--accent-soft); padding: 3px 8px; border-radius: 6px; }
+.ecw-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.ecw-btn { font: inherit; font-size: 14px; font-weight: 600; padding: 11px 18px; border-radius: 8px; border: 1px solid var(--line-2); background: #fff; color: inherit; cursor: pointer; display: flex; align-items: center; gap: 8px; }
+.ecw-btn:hover { background: oklch(0.97 0.005 70); }
+.ecw-btn[data-on="true"] { background: var(--accent-soft); color: var(--accent-ink); border-color: oklch(0.88 0.05 45); }
+.ecw-cancel { margin-left: auto; font: inherit; font-size: 14px; font-weight: 600; padding: 11px 8px; border: 0; background: transparent; color: var(--muted-2); cursor: pointer; }
+.ecw-cancel:hover { color: var(--ink); }
+@media (max-width: 640px) { .ecw-side { display: none !important; } .ecw-stage { height: 230px; } }
+@media (prefers-reduced-motion: reduce) { .ecw-card *, .ecw-card *::before, .ecw-card *::after { animation: none !important; } .ecw-pill { opacity: 1; } }

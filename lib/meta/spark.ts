@@ -156,7 +156,8 @@ How to fix each kind:
 - overlap (hidden behind the speaker): fewer nodes, shorter labels, or a layout that needs less room (e.g. stack or timeline instead of hub).
 - relevance (doesn't match the speech): change labels, icons, chart data or the layout so the visual says what the speaker says.
 
-Rules: change ONLY scene(s) ${scenes.length ? scenes.join(", ") : "involved in the findings"} - copy every other scene exactly, same ids. Keep scene ids for the scenes you revise (new extra scenes need new ids). Output ONLY the complete revised plan as one JSON object.`;
+Rules: revise ONLY scene(s) ${scenes.length ? scenes.join(", ") : "involved in the findings"}; every other scene is kept as it is automatically. Keep the scene ids of the scenes you revise (a scene you split out needs a new id). Word indices still refer to the full transcript.
+Output ONLY one JSON object of the form {"scenes": [ ...the revised scene(s), plus any new split-out scenes... ]} - do NOT repeat unchanged scenes.`;
 
   // The revised plan is long; if it comes back as broken JSON, show Spark its own error and ask once more.
   const messages: { role: "user" | "assistant"; content: string }[] = [{ role: "user", content: prompt }];
@@ -180,7 +181,7 @@ Rules: change ONLY scene(s) ${scenes.length ? scenes.join(", ") : "involved in t
         { role: "assistant", content },
         {
           role: "user",
-          content: `That isn't valid JSON (${err instanceof Error ? err.message : String(err)}). Output ONLY the complete corrected plan as one valid JSON object - no prose, no comments, no trailing commas.`,
+          content: `That isn't valid JSON (${err instanceof Error ? err.message : String(err)}). Output ONLY the corrected {"scenes": [...]} object as valid JSON - no prose, no comments, no trailing commas.`,
         }
       );
     }

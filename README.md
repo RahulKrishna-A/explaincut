@@ -104,16 +104,27 @@ npx tsx scripts/rerender.ts <jobId> [--plan plan.json] [--regions] [--layer-only
 ## Testing without API keys
 
 ```bash
-npx tsx scripts/smoke-test.ts
+npm run typecheck && npm run lint && npm run smoke
 ```
 
-Validates the diagram-plan schema, Remotion rendering, and the full ffmpeg
-compositing chain using fixtures (`data/fixtures/`) - no Meta API calls
-required. The segmentation step gracefully falls back to a centered-ellipse
-mask when `MODEL_API_KEY` isn't set, so the compositing machinery is fully
-exercised even before real credentials are available. Drop a short clip at
-`data/fixtures/demo-clip.mp4` to test against a real video (a synthetic
-`ffmpeg -f lavfi testsrc` clip works fine for a plumbing check).
+The smoke test (`scripts/smoke-test.ts`) makes no Meta API calls:
+
+1. Lays out every sample plan (all layouts plus charts) in portrait and
+   landscape, checks every element stays inside the frame, pages captions
+   and runs the self-review's measured checks.
+2. Validates the flow-example plan against a fixture transcript.
+3. Renders the hand-drawn layer with Remotion (ProRes 4444, real alpha).
+4. If `data/fixtures/demo-clip.mp4` exists, builds speaker masks (a
+   centred-ellipse mask per frame when `MODEL_API_KEY` isn't set) and runs the
+   full composite. A synthetic `ffmpeg -f lavfi testsrc` clip works fine for a
+   plumbing check.
+
+## Limits
+
+- Clips up to 2 minutes (checked before any API call) and 1 GB per upload.
+- Jobs live in memory and in `data/jobs/<id>/status.json`; after a server
+  restart, finished jobs load back from disk, and jobs that were mid-pipeline
+  are marked as interrupted.
 
 ## Known fallbacks (by design)
 

@@ -1,7 +1,8 @@
 import { execFile } from "node:child_process";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { randomUUID } from "node:crypto";
+import os from "node:os";
+import { createHash, randomUUID } from "node:crypto";
 import type { RenderPlan } from "@/types/diagramPlan";
 import type { Transcript } from "@/types/transcript";
 import type { CaptionSettings } from "@/types/renderOptions";
@@ -22,6 +23,59 @@ const REMOTION_BIN = path.resolve(process.cwd(), "node_modules/.bin/remotion");
  * the result onto the untouched original video (see pipeline.ts) instead of
  * replacing the real background with a synthetic one.
  */
+function runRemotion(args: string[]): Promise<void> {
+  return new Promise((resolve, reject) => {
+    execFile(REMOTION_BIN, args, { cwd: process.cwd(), maxBuffer: 1024 * 1024 * 64 }, (err, _stdout, stderr) => {
+      if (err) reject(new Error(`remotion ${args.slice(0, 2).join(" ")} failed:\n${stderr}`));
+      else resolve();
+    });
+  });
+}
+
+/** Everything the Remotion bundle is built from (compositions import shared layout code and types). */
+const BUNDLE_SOURCES = ["remotion", "lib", "types", "data/fixtures", "remotion.config.ts", "package-lock.json"];
+
+/** Cheap fingerprint of the bundle's sources (paths + mtimes), so a changed file means a fresh bundle. */
+async function sourceFingerprint(): Promise<string> {
+  const hash = createHash("sha1");
+  const walk = async (p: string): Promise<void> => {
+    const stat = await fs.stat(p).catch(() => null);
+    if (!stat) return;
+    if (stat.isDirectory()) {
+      for (const entry of (await fs.readdir(p)).sort()) await walk(path.join(p, entry));
+    } else if (/\.(tsx?|json|css)$/.test(p)) {
+      hash.update(`${p}:${stat.mtimeMs}\n`);
+    }
+  };
+  // Source tree read at runtime for fingerprinting only - not something to trace into the server bundle.
+  for (const src of BUNDLE_SOURCES) await walk(path.resolve(/*turbopackIgnore: true*/ process.cwd(), src));
+  return hash.digest("hex").slice(0, 12);
+}
+
+const bundles = new Map<string, Promise<string>>();
+
+/**
+ * Bundles the Remotion project once and reuses it for every render (each
+ * `remotion render <entry>` would otherwise re-run webpack - ~2 s per layer,
+ * and a job renders 2-3 layers). Keyed by a source fingerprint, so editing a
+ * composition during development still picks up the change.
+ */
+async function remotionBundle(): Promise<string> {
+  const key = await sourceFingerprint();
+  let bundle = bundles.get(key);
+  if (!bundle) {
+    const outDir = path.join(os.tmpdir(), "explaincut-remotion", key);
+    bundle = (async () => {
+      const ready = await fs.stat(path.join(outDir, "index.html")).then(() => true, () => false);
+      if (!ready) await runRemotion(["bundle", `--out-dir=${outDir}`, "--log=error"]);
+      return outDir;
+    })();
+    bundle.catch(() => bundles.delete(key));
+    bundles.set(key, bundle);
+  }
+  return bundle;
+}
+
 /** Renders any registered composition to a ProRes 4444 .mov with a real alpha channel. */
 export async function renderTransparentLayer(compositionId: string, props: Record<string, unknown>, outputPath: string): Promise<void> {
   const propsPath = path.join(path.dirname(outputPath), `.remotion-props-${randomUUID()}.json`);
@@ -29,6 +83,7 @@ export async function renderTransparentLayer(compositionId: string, props: Recor
 
   const args = [
     "render",
+    await remotionBundle(),
     compositionId,
     outputPath,
     `--props=${propsPath}`,
@@ -41,20 +96,7 @@ export async function renderTransparentLayer(compositionId: string, props: Recor
   // overlay/alphamerge composites align pixel-for-pixel.
 
   try {
-    await new Promise<void>((resolve, reject) => {
-      execFile(
-        REMOTION_BIN,
-        args,
-        { cwd: process.cwd(), maxBuffer: 1024 * 1024 * 64 },
-        (err, _stdout, stderr) => {
-          if (err) {
-            reject(new Error(`remotion render ${compositionId} failed:\n${stderr}`));
-            return;
-          }
-          resolve();
-        }
-      );
-    });
+    await runRemotion(args);
   } finally {
     await fs.unlink(propsPath).catch(() => {});
   }

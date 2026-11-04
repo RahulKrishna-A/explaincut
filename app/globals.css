@@ -896,3 +896,11 @@ input:focus-visible + label,
     padding: 0 16px 32px;
   }
 }
+
+.ec-fixed-ready {
+  padding: 10px 12px;
+  border-radius: 6px;
+  background: var(--ok-soft);
+  color: var(--ok);
+  font-size: 14px;
+}

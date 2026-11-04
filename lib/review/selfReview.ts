@@ -19,7 +19,8 @@ import type { FreeSpace } from "@/types/diagramPlan";
 import type { CheckKind, ReviewFinding, SelfReview } from "@/types/review";
 import { CHECK_KINDS } from "@/types/review";
 import type { MaskSample } from "@/lib/ffmpeg/maskToAlpha";
-import { runFfmpeg } from "@/lib/ffmpeg/run";
+import { getDurationSeconds, runFfmpeg } from "@/lib/ffmpeg/run";
+import { mapPool } from "@/lib/util/pool";
 import { reviewWithWonder, verifyWithWonder, type ReviewFrame, type WonderFinding } from "@/lib/meta/wonder";
 import { replanScenes } from "@/lib/meta/spark";
 import {
@@ -56,13 +57,23 @@ export interface SelfReviewResult {
   renderPlan: RenderPlan;
 }
 
+/**
+ * One JPEG thumbnail at time t. Seeking at (or a hair past) the last frame
+ * makes ffmpeg exit cleanly without writing anything, so an empty grab is
+ * retried a little earlier before giving up.
+ */
 async function grabFrame(video: string, t: number, out: string): Promise<string> {
-  await runFfmpeg(["-y", "-ss", Math.max(0, t).toFixed(3), "-i", video, "-frames:v", "1", "-vf", "scale=480:-2", "-q:v", "4", out]);
-  return (await fs.readFile(out)).toString("base64");
+  for (const back of [0, 0.3, 1]) {
+    await fs.rm(out, { force: true });
+    await runFfmpeg(["-y", "-ss", Math.max(0, t - back).toFixed(3), "-i", video, "-frames:v", "1", "-vf", "scale=480:-2", "-q:v", "4", out]);
+    const data = await fs.readFile(out).catch(() => null);
+    if (data && data.length > 0) return data.toString("base64");
+  }
+  throw new Error(`couldn't grab a frame at ${t.toFixed(2)}s`);
 }
 
 /** When to look: as each scene's drawing completes, mid-scene, and wherever a measurement flagged something. */
-function pickSampleTimes(plan: RenderPlan, extra: number[]): number[] {
+function pickSampleTimes(plan: RenderPlan, extra: number[], videoSeconds: number): number[] {
   const { fps } = plan;
   const times: number[] = [...extra];
   for (const scene of plan.scenes) {
@@ -72,7 +83,8 @@ function pickSampleTimes(plan: RenderPlan, extra: number[]): number[] {
     times.push(Math.min(settled + 0.2, lastVisible));
     times.push(Math.min((scene.start / fps + settled) / 2, lastVisible));
   }
-  const maxT = plan.durationSeconds - 0.1;
+  // The transcript's duration can run past the video's last frame - clamp to the real file.
+  const maxT = Math.min(plan.durationSeconds, videoSeconds) - 0.15;
   const sorted = [...new Set(times.map((t) => Math.max(0, Math.min(maxT, Math.round(t * 10) / 10))))].sort((a, b) => a - b);
   const deduped = sorted.filter((t, i) => i === 0 || t - sorted[i - 1] >= 0.6);
   if (deduped.length <= MAX_FRAMES) return deduped;
@@ -160,13 +172,16 @@ export async function runSelfReview(deps: SelfReviewDeps): Promise<SelfReviewRes
   const masks = deps.maskSamples?.length ? await loadMasks(deps.maskSamples, renderPlan.width, renderPlan.height) : [];
   const measured = [...measureTiming(renderPlan), ...measureOverlap(renderPlan, masks)];
 
-  const times = pickSampleTimes(renderPlan, measured.map((m) => m.time));
-  const before: ReviewFrame[] = [];
-  for (let i = 0; i < times.length; i++) {
-    before.push({ time: times[i], jpegBase64: await grabFrame(outputPath, times[i], path.join(reviewDir, `before-${i}.jpg`)) });
-    review.framesSampled = i + 1;
-    if (i % 3 === 2 || i === times.length - 1) publish();
-  }
+  const videoSeconds = await getDurationSeconds(outputPath).catch(() => renderPlan.durationSeconds);
+  const times = pickSampleTimes(renderPlan, measured.map((m) => m.time), videoSeconds);
+  const grabAll = (prefix: "before" | "after") =>
+    mapPool(times, 4, async (time, i): Promise<ReviewFrame> => ({
+      time,
+      jpegBase64: await grabFrame(outputPath, time, path.join(reviewDir, `${prefix}-${i}.jpg`)),
+    }));
+  const before = await grabAll("before");
+  review.framesSampled = before.length;
+  publish();
   log(`Muse Wonder is watching ${times.length} frames of your cut`);
 
   let wonder: WonderFinding[] = [];
@@ -255,10 +270,12 @@ export async function runSelfReview(deps: SelfReviewDeps): Promise<SelfReviewRes
       revised = candidate;
       revisedScore = problems.length;
     }
-    if (problems.length === 0 || draft === 2) break;
-    log(`Spark's draft still has ${problems.length} timing/overlap problem${problems.length > 1 ? "s" : ""} - asking for another pass`);
+    // Another Spark pass costs ~1-2 minutes: only worth it for problems a viewer would really notice.
+    if (draft === 2 || !problems.some((m) => m.severity === "high")) break;
+    const serious = problems.filter((m) => m.severity === "high");
+    log(`Spark's draft still has ${serious.length} serious timing/overlap problem${serious.length > 1 ? "s" : ""} - asking for another pass`);
     base = candidate;
-    request = problems.map((m, i) => ({ ...m, id: `d${i + 1}` }));
+    request = serious.map((m, i) => ({ ...m, id: `d${i + 1}` }));
   }
 
   // --- 3. RENDER --------------------------------------------------------------
@@ -271,7 +288,7 @@ export async function runSelfReview(deps: SelfReviewDeps): Promise<SelfReviewRes
     after = await deps.rerender(revised);
   } catch (err) {
     console.error("Re-render after fix failed:", err);
-    await fs.copyFile(path.join(dir, "output-before.mp4"), outputPath).catch(() => {});
+    // The output is only ever replaced by an atomic rename, so a failed re-render left the first cut untouched.
     review.hasBefore = false;
     return giveUp("The fixed plan couldn't be rendered - kept the original cut");
   }
@@ -293,10 +310,7 @@ export async function runSelfReview(deps: SelfReviewDeps): Promise<SelfReviewRes
     }
   }
 
-  const afterFrames: ReviewFrame[] = [];
-  for (let i = 0; i < times.length; i++) {
-    afterFrames.push({ time: times[i], jpegBase64: await grabFrame(outputPath, times[i], path.join(reviewDir, `after-${i}.jpg`)) });
-  }
+  const afterFrames = await grabAll("after");
   for (const f of review.findings) if (f.beforeFrame) f.afterFrame = f.beforeFrame.replace("before-", "after-");
 
   const fromWonder = actionable.filter((x) => x.source === "wonder");
