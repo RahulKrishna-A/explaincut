@@ -31,6 +31,11 @@ RUN npm run build
 # Download Remotion's headless Chromium now so the first render isn't slow.
 RUN npx remotion browser ensure
 
+# Bundle the Remotion compositions once here: running webpack inside the live
+# server (next to Next.js) can run out of memory on a small instance.
+RUN npx remotion bundle --out-dir=/app/.remotion-bundle --log=error
+ENV REMOTION_BUNDLE_DIR=/app/.remotion-bundle
+
 ENV NODE_ENV=production
 # Job files live here; mount a Railway volume at this path to keep them across restarts.
 ENV JOB_DATA_DIR=/app/data/jobs

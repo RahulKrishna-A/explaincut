@@ -11,3 +11,4 @@ out
 .vercel
 .DS_Store
 npm-debug.log*
+.remotion-bundle

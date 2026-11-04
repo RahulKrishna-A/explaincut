@@ -47,3 +47,6 @@ next-env.d.ts
 /data/fixtures/*.mp4
 /data/fixtures/*.mov
 /data/fixtures/.smoke-test/
+
+# Remotion bundle built into the Docker image
+/.remotion-bundle/

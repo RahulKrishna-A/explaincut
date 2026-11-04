@@ -25,9 +25,13 @@ const REMOTION_BIN = path.resolve(process.cwd(), "node_modules/.bin/remotion");
  */
 function runRemotion(args: string[]): Promise<void> {
   return new Promise((resolve, reject) => {
-    execFile(REMOTION_BIN, args, { cwd: process.cwd(), maxBuffer: 1024 * 1024 * 64 }, (err, _stdout, stderr) => {
-      if (err) reject(new Error(`remotion ${args.slice(0, 2).join(" ")} failed:\n${stderr}`));
-      else resolve();
+    execFile(REMOTION_BIN, args, { cwd: process.cwd(), maxBuffer: 1024 * 1024 * 64 }, (err, stdout, stderr) => {
+      if (!err) return resolve();
+      // A process killed for memory (SIGKILL) prints nothing - say how it ended, and include
+      // stdout too: the CLI writes some errors there.
+      const how = err.killed || err.signal ? `killed by ${err.signal ?? "signal"} (out of memory?)` : `exit code ${err.code ?? "?"}`;
+      const tail = (s: string) => s.trim().split("\n").slice(-40).join("\n");
+      reject(new Error(`remotion ${args.slice(0, 2).join(" ")} failed (${how}):\n${tail(stderr) || "(no stderr)"}\n--- stdout ---\n${tail(stdout) || "(no stdout)"}`));
     });
   });
 }
@@ -61,6 +65,9 @@ const bundles = new Map<string, Promise<string>>();
  * composition during development still picks up the change.
  */
 async function remotionBundle(): Promise<string> {
+  // Production images bundle once at build time (see Dockerfile), so the server never runs webpack.
+  const prebuilt = process.env.REMOTION_BUNDLE_DIR;
+  if (prebuilt && (await fs.stat(path.join(prebuilt, "index.html")).then(() => true, () => false))) return prebuilt;
   const key = await sourceFingerprint();
   let bundle = bundles.get(key);
   if (!bundle) {
