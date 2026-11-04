@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { TONES } from "@/lib/style/tone";
 import { ACCENTS, CHART_TYPES, ICON_NAMES, NODE_SHAPES, OP_TYPES, SCENE_LAYOUTS } from "@/types/diagramPlan";
 
 // The model occasionally invents a shape/icon/colour name. Rather than failing
@@ -77,6 +78,7 @@ export const diagramSceneSchema = z.object({
   edges: z.array(diagramEdgeSchema).default([]),
   ops: z.array(diagramOpSchema).default([]),
   chart: chartSpecSchema.optional().catch(undefined),
+  tone: z.enum(TONES).optional().catch(undefined),
 });
 
 export const diagramPlanSchema = z.object({

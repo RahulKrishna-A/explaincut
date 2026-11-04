@@ -45,6 +45,7 @@ Output ONLY one JSON object (no prose, no markdown fences):
   "scenes": [{
     "id": string,
     "layout": "flow" | "hub" | "stack" | "cycle" | "compare" | "tree" | "timeline" | "chart",
+    "tone": "hype" | "technical" | "playful" | "warning" | "success" | "calm",
     "chart"?: { "type": "bar" | "line" | "pie", "data": [{ "id": string, "label": string, "value": number }], "unit"?: string, "yLabel"?: string, "showValues"?: boolean },
     "nodes": [{ "id": string, "label": string, "shape"?: Shape, "icon"?: Icon, "color"?: Color, "group"?: "a"|"b" }],
     "edges": [{ "id": string, "from": nodeId, "to": nodeId, "label"?: string, "dashed"?: boolean, "bidirectional"?: boolean }],
@@ -55,6 +56,15 @@ Output ONLY one JSON object (no prose, no markdown fences):
 Shape: "box" | "pill" | "circle" | "cylinder" (storage/memory/database) | "cloud" (outputs, ideas, the internet) | "diamond" (decisions) | "doc" (files, documents)
 Icon: ${ICON_NAMES.map((i) => `"${i}"`).join(" | ")}
 Color: "blue" | "pink" | "green" | "orange" | "purple"
+Tag every scene with the speaker's TONE in it - it sets the sticker's art style and how much everything bounces:
+- "hype": excited, big claims, "this is huge", launches and wins in progress -> glossy 3D holographic, bouncy.
+- "technical": explaining how something works step by step, precise and neutral -> clean isometric line art, crisp.
+- "playful": light, jokey, casual asides, everyday analogies -> cute doodles, springy.
+- "warning": problems, mistakes, risks, "don't do this", something breaking -> retro warning badge, stamped down hard.
+- "success": results, payoffs, money, "it worked", the optimal outcome -> gold foil, celebratory.
+- "calm": reflective, gentle teaching, wrapping up -> paper-cut craft, soft and slow.
+Read the words AND the situation; most explainer scenes are "technical" or "playful".
+
 Choose the FORM that matches the idea's structure (this matters more than anything else):
 - flow = steps/process in order; hub = one central concept with satellites; stack = layers of a system; cycle = a loop that returns to the start; compare = two sides (set node.group "a"/"b").
 - tree = a hierarchy / taxonomy / breakdown ("X has two kinds", "split into", "consists of"): edges go parent -> child, one parent per node.
@@ -74,7 +84,7 @@ OpType (what the pen does on the trigger word):
 - "flow": a glowing packet travels along an existing arrow (target = edge id) - use when the speaker describes data/requests moving.
 - "circle" | "underline" | "highlight" | "sparkle" | "check" | "cross": emphasis on a node (target = node id) - on emphatic words ("key", "most important", "optimal", "wrong", "not").
 - "note": a short handwritten aside next to a node or data point (target optional, text <= 4 words) - for asides, conditions, numbers.
-- "sticker": slap a small, colourful sticker illustration on screen (generated as an image) - the eye-candy that makes a reel feel produced. "text" = what it depicts, as a short concrete visual description (e.g. "a database cylinder", "a glowing brain", "a rocket launching", "a stack of gold coins", "a padlock", "a smartphone"); "target" = the node or data point it belongs beside (optional). Use one in each scene that has a concrete, picturable anchor - a real thing the speaker names (database, server, phone, money, coffee) or a clear visual metaphor for the key idea (memory -> a brain, speed -> a rocket, security -> a padlock, search -> a magnifying glass). Pick the most important thing in the scene, trigger it on the word that names it, and depict it rather than repeating a label word for word. Skip it for scenes that are purely abstract and for chart scenes; never more than one per scene.
+- "sticker": slap a small sticker illustration on screen (generated as an image) - the eye-candy that makes a reel feel produced. "target" = the node or data point it belongs beside (optional). "text" = ART DIRECTION for the illustrator, 6-16 words: the subject, what it is doing in THIS idea, and its mood - e.g. "a brain pulling a glowing file out of a filing drawer, focused", "a rocket blasting off trailing sparks, triumphant", "a cracked padlock with a red crack through the shackle", "a sleepy database cylinder wearing a nightcap", "a trophy overflowing with gold coins". Never a bare noun, never text, letters, logos, arrows, plain shapes, or speech/chat bubbles - those say nothing as a picture. Use one in each scene that has a concrete, picturable anchor - a real thing the speaker names (database, server, phone, money, coffee) or a clear visual metaphor for the key idea (memory -> a brain, speed -> a rocket, security -> a padlock, search -> a magnifying glass). Trigger it on the word that names it. Skip it for purely abstract scenes and chart scenes; never more than one per scene.
 - "plot": chart scenes only - plot one data point (target = datum id): a bar grows, the line extends, a slice sweeps. Trigger on the word naming that category or saying its number. Emphasis ops and notes may target datum ids too.
 
 Rules:

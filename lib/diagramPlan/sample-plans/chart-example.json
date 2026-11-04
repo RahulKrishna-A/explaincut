@@ -6,6 +6,7 @@
     {
       "id": "s3",
       "layout": "chart",
+      "tone": "success",
       "nodes": [],
       "edges": [],
       "chart": {

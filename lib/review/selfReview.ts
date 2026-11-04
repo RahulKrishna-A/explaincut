@@ -32,7 +32,9 @@ import {
   type MeasuredFinding,
 } from "./measure";
 
-const MAX_FRAMES = 10;
+const MAX_FRAMES = 16;
+/** Spark drafts per fix: a redraft is requested while serious measured problems remain. */
+const MAX_DRAFTS = 3;
 const ERASE_SECONDS = 0.45;
 
 export interface SelfReviewDeps {
@@ -65,7 +67,7 @@ export interface SelfReviewResult {
 async function grabFrame(video: string, t: number, out: string): Promise<string> {
   for (const back of [0, 0.3, 1]) {
     await fs.rm(out, { force: true });
-    await runFfmpeg(["-y", "-ss", Math.max(0, t - back).toFixed(3), "-i", video, "-frames:v", "1", "-vf", "scale=480:-2", "-q:v", "4", out]);
+    await runFfmpeg(["-y", "-ss", Math.max(0, t - back).toFixed(3), "-i", video, "-frames:v", "1", "-vf", "scale=720:-2", "-q:v", "3", out]);
     const data = await fs.readFile(out).catch(() => null);
     if (data && data.length > 0) return data.toString("base64");
   }
@@ -255,7 +257,7 @@ export async function runSelfReview(deps: SelfReviewDeps): Promise<SelfReviewRes
   let revisedScore = Infinity;
   let request = actionable as { id: string; kind: string; sceneId?: string; target?: string; time: number; title: string; detail: string; suggestion?: string }[];
   let base: unknown = deps.rawPlan;
-  for (let draft = 1; draft <= 2; draft++) {
+  for (let draft = 1; draft <= MAX_DRAFTS; draft++) {
     let candidate: unknown;
     let problems: MeasuredFinding[];
     try {
@@ -271,7 +273,7 @@ export async function runSelfReview(deps: SelfReviewDeps): Promise<SelfReviewRes
       revisedScore = problems.length;
     }
     // Another Spark pass costs ~1-2 minutes: only worth it for problems a viewer would really notice.
-    if (draft === 2 || !problems.some((m) => m.severity === "high")) break;
+    if (draft === MAX_DRAFTS || !problems.some((m) => m.severity === "high")) break;
     const serious = problems.filter((m) => m.severity === "high");
     log(`Spark's draft still has ${serious.length} serious timing/overlap problem${serious.length > 1 ? "s" : ""} - asking for another pass`);
     base = candidate;

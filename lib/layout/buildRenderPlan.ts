@@ -27,8 +27,12 @@ import type {
   ResolvedDiagramScene,
   SliceElement,
   StickerAssets,
+  RenderStyle,
 } from "@/types/diagramPlan";
-import { stickerKey } from "./stickerKey";
+import { legacyStickerKey, stickerKey } from "./stickerKey";
+import { toneProfile } from "@/lib/style/tone";
+import { buildSweeps } from "./buildSweeps";
+import { buildKeywords } from "./buildKeywords";
 import {
   SHAPE_ASPECT,
   center,
@@ -678,7 +682,7 @@ function edgeBends(scene: ResolvedDiagramScene, boxes: Map<string, Rect>, ctx: C
   return bends;
 }
 
-export function buildRenderPlan(plan: ResolvedDiagramPlan, space: FreeSpace, stickers: StickerAssets = {}): RenderPlan {
+export function buildRenderPlan(plan: ResolvedDiagramPlan, space: FreeSpace, stickers: StickerAssets = {}, style: RenderStyle = "classic"): RenderPlan {
   const { width: W, height: H } = space;
   const ctx: Ctx = { W, H, u: Math.min(W, H) / 100 };
   const fps = plan.fps;
@@ -1044,7 +1048,7 @@ export function buildRenderPlan(plan: ResolvedDiagramPlan, space: FreeSpace, sti
     }
 
     function addSticker(subject: string, targetId: string | undefined, frame: number, key: string) {
-      const asset = stickers[stickerKey(subject)];
+      const asset = stickers[stickerKey(subject, scene.tone)] ?? stickers[legacyStickerKey(subject)];
       if (!asset) return; // generation failed or was skipped - nothing to show
       const target = targetId ? ensureTarget(targetId, frame) : null;
       const rect = placeSticker(asset.width / Math.max(1, asset.height), target?.box, [...geo.occupied, ...notePlaced], space.regions, ctx);
@@ -1052,7 +1056,8 @@ export function buildRenderPlan(plan: ResolvedDiagramPlan, space: FreeSpace, sti
       // Not pen-drawn, so it doesn't queue behind the pen - it lands right on its word.
       const start = Math.max(frame - lead, sceneStart, target ? target.start + Math.round(target.duration * 0.5) : 0);
       if (start >= lastDrawFrame) return;
-      const t = { start, duration: sec(STICKER_SECONDS) };
+      const profile = toneProfile(scene.tone);
+      const t = { start, duration: sec(profile.entranceSeconds ?? STICKER_SECONDS) };
       notePlaced.push(rect);
       const seed = seedBase + hash(key);
       elements.push({
@@ -1064,6 +1069,10 @@ export function buildRenderPlan(plan: ResolvedDiagramPlan, space: FreeSpace, sti
         src: asset.src,
         tilt: ((seed % 1000) / 1000 - 0.5) * 16,
         subject,
+        material: profile.material,
+        entrance: profile.entrance,
+        // Lifts off just before the scene wipe, rather than fading with the drawing.
+        exitAt: Math.max(start + t.duration, lastDrawFrame - sec(0.1)),
         ...t,
         cue: cueOf(frame),
       });
@@ -1078,7 +1087,7 @@ export function buildRenderPlan(plan: ResolvedDiagramPlan, space: FreeSpace, sti
 
     if (elements.length === 0) return;
     elements.sort((a, b) => a.start - b.start);
-    renderScenes.push({ id: scene.id, start: elements[0].start, end: sceneEnd, elements });
+    renderScenes.push({ id: scene.id, tone: scene.tone, start: elements[0].start, end: sceneEnd, elements });
   });
 
   return {
@@ -1091,5 +1100,7 @@ export function buildRenderPlan(plan: ResolvedDiagramPlan, space: FreeSpace, sti
     regions: space.regions,
     scenes: renderScenes,
     dropped,
+    ...(style === "journal" ? { style, sweeps: buildSweeps(renderScenes, space, fps, totalFrames) } : {}),
+    ...(style === "hormozi" ? { style, keywords: buildKeywords(plan, space, fps, totalFrames) } : {}),
   };
 }

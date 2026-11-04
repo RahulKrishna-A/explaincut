@@ -3,14 +3,19 @@ import { interpolate, useCurrentFrame } from "remotion";
 import type { EdgeElement, RenderPlan, RenderScene } from "@/types/diagramPlan";
 import { EdgeView, MarkView, NodeView, PacketView, TextView, type DrawCtx } from "./sketch/elements";
 import { AxesView, BarView, PointView, SliceView } from "./sketch/charts";
-import { PALETTES } from "./sketch/theme";
+import { HORMOZI_PALETTES, JOURNAL_PALETTES, PALETTES } from "./sketch/theme";
+import { KeywordView } from "./sketch/keywords";
+import { SweepView } from "./sketch/sweeps";
 import { StickerView, usePreloadStickers } from "./sketch/sticker";
+import { toneProfile } from "@/lib/style/tone";
 
 const ERASE_SECONDS = 0.45;
 /** Paint order inside a scene: arrows tuck under boxes, emphasis and notes sit on top. */
 const Z: Record<string, number> = { axes: -1, edge: 0, packet: 1, node: 2, bar: 2, point: 2, slice: 2, mark: 3, sticker: 3.5, text: 4 };
 
-const SceneLayer: React.FC<{ scene: RenderScene; ctx: DrawCtx }> = ({ scene, ctx }) => {
+const SceneLayer: React.FC<{ scene: RenderScene; ctx: DrawCtx }> = ({ scene, ctx: baseCtx }) => {
+  // Everything in the scene moves with the energy of the speaker's tone.
+  const ctx: DrawCtx = { ...baseCtx, energy: toneProfile(scene.tone).energy };
   const { frame, fps, u } = ctx;
   if (frame < scene.start || frame >= scene.end) return null;
   const eraseFrames = Math.round(ERASE_SECONDS * fps);
@@ -59,8 +64,8 @@ export const SketchRenderer: React.FC<{ plan: RenderPlan; showRegions?: boolean 
   const frame = useCurrentFrame();
   const { width, height, fps } = plan;
   const u = Math.min(width, height) / 100;
-  const palette = PALETTES[plan.theme] ?? PALETTES.ink;
-  const ctx: DrawCtx = { frame, fps, width, height, u, palette };
+  const palette = (plan.style === "journal" ? JOURNAL_PALETTES : plan.style === "hormozi" ? HORMOZI_PALETTES : PALETTES)[plan.theme] ?? PALETTES.ink;
+  const ctx: DrawCtx = { frame, fps, width, height, u, palette, journal: plan.style === "journal" };
   usePreloadStickers([...new Set(plan.scenes.flatMap((s) => s.elements.flatMap((el) => (el.kind === "sticker" ? [el.src] : []))))]);
 
   return (
@@ -75,6 +80,18 @@ export const SketchRenderer: React.FC<{ plan: RenderPlan; showRegions?: boolean 
             <rect key={i} x={r.x} y={r.y} width={r.w} height={r.h} fill="rgba(0,200,255,0.08)" stroke="#00c8ff" strokeDasharray="8 6" strokeWidth={2} />
           ))
         : null}
+      {/* Keywords sit furthest back, so drawings overlay them. */}
+      <g>
+        {(plan.keywords ?? []).map((k) => (
+          <KeywordView key={k.id} el={k} ctx={ctx} />
+        ))}
+      </g>
+      {/* Sweeps run under the scene drawing; the mask later hides them wherever the speaker is. */}
+      <g>
+        {(plan.sweeps ?? []).map((sw) => (
+          <SweepView key={sw.id} el={sw} ctx={ctx} />
+        ))}
+      </g>
       <g filter="url(#sketch-shadow)">
         {plan.scenes.map((scene) => (
           <SceneLayer key={scene.id} scene={scene} ctx={ctx} />

@@ -2,8 +2,10 @@ import React, { useMemo } from "react";
 import { AbsoluteFill, interpolate, useCurrentFrame, useVideoConfig, type CalculateMetadataFunction } from "remotion";
 import type { TranscriptWord } from "@/types/transcript";
 import { DEFAULT_RENDER_OPTIONS, type CaptionSettings } from "@/types/renderOptions";
-import { buildCaptionPages, captionMetrics } from "@/lib/captions/buildCaptions";
+import { buildCaptionPages, buildHormoziPages, captionMetrics } from "@/lib/captions/buildCaptions";
 import { captionFontFamily } from "./captionFonts";
+import { heavyFontFamily } from "./fonts";
+import type { RenderStyle } from "@/types/diagramPlan";
 import demoTranscript from "@/data/fixtures/demo-transcript.json";
 
 export type CaptionsProps = {
@@ -13,6 +15,7 @@ export type CaptionsProps = {
   height: number;
   fps: number;
   durationSeconds: number;
+  style?: RenderStyle;
 } & Record<string, unknown>;
 
 export const captionsDefaultProps: CaptionsProps = {
@@ -40,11 +43,15 @@ const POP_FRAMES = 4;
  * spoken lit up. Composited OVER the speaker (after the drawing layer's
  * punch-out), so the person never hides them.
  */
-export const CaptionsComposition: React.FC<CaptionsProps> = ({ words, settings }) => {
+export const CaptionsComposition: React.FC<CaptionsProps> = ({ words, settings, style }) => {
   const frame = useCurrentFrame();
   const { fps, width, height } = useVideoConfig();
-  const metrics = useMemo(() => captionMetrics(width, height, settings), [width, height, settings]);
-  const pages = useMemo(() => buildCaptionPages(words, metrics, settings.font), [words, metrics, settings.font]);
+  const metrics = useMemo(() => captionMetrics(width, height, settings, style), [width, height, settings, style]);
+  const hormozi = style === "hormozi";
+  const pages = useMemo(
+    () => (hormozi ? buildHormoziPages(words, metrics) : buildCaptionPages(words, metrics, settings.font)),
+    [words, metrics, settings.font, hormozi]
+  );
   const fontFamily = captionFontFamily(settings.font);
 
   const t = frame / fps;
@@ -55,6 +62,52 @@ export const CaptionsComposition: React.FC<CaptionsProps> = ({ words, settings }
   const appear = interpolate(local, [0, POP_FRAMES], [0, 1], { extrapolateLeft: "clamp", extrapolateRight: "clamp" });
   const exitFrames = Math.round(page.end * fps) - frame;
   const fadeOut = interpolate(exitFrames, [0, 3], [0, 1], { extrapolateLeft: "clamp", extrapolateRight: "clamp" });
+
+  if (hormozi) {
+    const activeIdx = page.words.findIndex((w, i) => t >= w.start && t < (page.words[i + 1]?.start ?? page.end));
+    const pop = interpolate(local, [0, 3, 6], [0.82, 1.08, 1], { extrapolateLeft: "clamp", extrapolateRight: "clamp" });
+    const stroke = Math.max(4, metrics.fontSize * 0.14);
+    return (
+      <AbsoluteFill>
+        <div
+          style={{
+            position: "absolute",
+            left: 0,
+            right: 0,
+            bottom: metrics.bottomMargin,
+            display: "flex",
+            justifyContent: "center",
+            opacity: fadeOut,
+            transform: `scale(${pop})`,
+            transformOrigin: "50% 100%",
+          }}
+        >
+          <div
+            style={{
+              maxWidth: metrics.maxTextWidth,
+              textAlign: "center",
+              fontFamily: heavyFontFamily,
+              fontWeight: 900,
+              fontSize: metrics.fontSize,
+              lineHeight: `${metrics.lineHeight}px`,
+              textTransform: "uppercase",
+              letterSpacing: "-0.01em",
+              WebkitTextStroke: `${stroke}px #000`,
+              paintOrder: "stroke fill",
+              filter: `drop-shadow(0 ${metrics.fontSize * 0.06}px ${metrics.fontSize * 0.1}px rgba(0,0,0,0.6))`,
+            }}
+          >
+            {page.words.map((w, i) => (
+              <React.Fragment key={i}>
+                {i > 0 ? " " : null}
+                <span style={{ color: settings.highlightActiveWord && i === activeIdx ? "#ffe600" : "#ffffff" }}>{w.text}</span>
+              </React.Fragment>
+            ))}
+          </div>
+        </div>
+      </AbsoluteFill>
+    );
+  }
 
   return (
     <AbsoluteFill>

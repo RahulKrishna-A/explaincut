@@ -7,6 +7,7 @@
 import React from "react";
 import type { AxesElement, BarElement, PointElement, SliceElement } from "@/types/diagramPlan";
 import { axesPhases, barPhases, pointPhases, slicePhases, type Phase } from "@/lib/layout/timing";
+import { backOut } from "./motion";
 import { arrowHead, hachure, handLine, rng, sketchRect, toPath, type Pt, type Stroke } from "./rough";
 import { HandText, InkPath, Sketch, clamp01, liven, phaseProgress, safeId, smooth, strokeWidth, type DrawCtx } from "./elements";
 
@@ -81,7 +82,8 @@ export const BarView: React.FC<{ el: BarElement; ctx: DrawCtx }> = ({ el, ctx })
   const u = ctx.u;
   const sw = strokeWidth(ctx);
   const accent = ctx.palette.accents[el.color];
-  const g = smooth(p(ph.grow));
+  // Grows a touch past its value and settles back - weight, not a linear wipe.
+  const g = backOut(p(ph.grow), (ctx.energy ?? 1) * 0.55);
   const { bar } = el;
   const cur =
     el.orientation === "vertical"
@@ -155,7 +157,7 @@ export const PointView: React.FC<{ el: PointElement; ctx: DrawCtx }> = ({ el, ct
   const accent = ctx.palette.accents[el.color];
   const r = rng(el.seed);
   const pSeg = p(ph.segment);
-  const pDot = smooth(p(ph.dot));
+  const pDot = backOut(p(ph.dot), ctx.energy);
 
   let segment: React.ReactNode = null;
   if (el.prev && ph.segment && pSeg > 0) {

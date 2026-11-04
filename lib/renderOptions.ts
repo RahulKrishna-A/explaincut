@@ -1,10 +1,11 @@
 import { z } from "zod";
-import { CAPTION_FONTS, CAPTION_SIZES, DEFAULT_RENDER_OPTIONS, type RenderOptions } from "@/types/renderOptions";
+import { CAPTION_FONTS, CAPTION_SIZES, RENDER_STYLES, DEFAULT_RENDER_OPTIONS, type RenderOptions } from "@/types/renderOptions";
 
 const d = DEFAULT_RENDER_OPTIONS.captions;
 const r = DEFAULT_RENDER_OPTIONS.selfReview;
 
 const renderOptionsSchema = z.object({
+  style: z.enum(RENDER_STYLES).catch(DEFAULT_RENDER_OPTIONS.style).default(DEFAULT_RENDER_OPTIONS.style),
   captions: z
     .object({
       enabled: z.boolean().catch(d.enabled).default(d.enabled),

@@ -54,6 +54,7 @@ export function describePlanForReview(plan: RenderPlan, transcript: Transcript):
 }
 
 async function callWonder(text: string, frames: ReviewFrame[]): Promise<unknown> {
+  // The review is the quality gate for the whole cut - let Wonder think it through.
   const content: unknown[] = [{ type: "input_text", text }];
   frames.forEach((f, i) => {
     content.push({ type: "input_text", text: `Frame ${i + 1} at ${fmt(f.time)}:` });
@@ -61,7 +62,7 @@ async function callWonder(text: string, frames: ReviewFrame[]): Promise<unknown>
   });
   const res = (await metaPostJSON("/responses", {
     model: MODEL_ID,
-    reasoning: { effort: "medium" },
+    reasoning: { effort: "high" },
     input: [{ role: "user", content }],
   })) as ResponsesApiResult;
   return extractJson(extractText(res));
@@ -144,4 +145,58 @@ Output ONLY a JSON array: [{"id": string, "fixed": boolean, "note": "what you se
     if (typeof it.id !== "string" || typeof it.fixed !== "boolean") return [];
     return [{ id: it.id, fixed: it.fixed, note: typeof it.note === "string" ? it.note : undefined }];
   });
+}
+
+export interface StickerVerdict {
+  /** 0-based index of the best candidate. */
+  best: number;
+  /** 0-10 per candidate, same order as given. */
+  scores: number[];
+  reason?: string;
+}
+
+/**
+ * Art director for stickers: Muse Wonder looks at several Muse Image
+ * candidates for the same sticker (already cut out, shown on a neutral grey
+ * like the wall behind a speaker) and picks the one that best sells the idea.
+ */
+export async function pickBestSticker(subject: string, style: string, candidatesJpegBase64: string[]): Promise<StickerVerdict> {
+  const n = candidatesJpegBase64.length;
+  const content: unknown[] = [
+    {
+      type: "input_text",
+      text: `You are the art director for a short explainer video. A die-cut vinyl sticker will pop up next to the speaker for about two seconds to illustrate this idea:
+
+"${subject}"
+
+Intended art style: ${style}
+
+Below are ${n} candidate stickers, each shown cut out on a neutral grey background. Score each from 0 to 10 as a viewer scrolling past would judge it:
+- Instantly readable: one clear subject with a bold silhouette, recognisable at small size in under a second.
+- Says the idea: the subject, action and mood match the description above (not just the noun).
+- Looks premium and on-style, with no artifacts: no stray text or letters, no leftover green, no cropped parts, no card or frame behind it, no melted or malformed shapes.
+Score 0-3 for anything with text, garbled parts or a broken cutout.
+
+Output ONLY JSON: {"scores": [one number per candidate, in order], "best": 1-based index of the best one, "reason": "<= 15 words"}`,
+    },
+  ];
+  candidatesJpegBase64.forEach((b64, i) => {
+    content.push({ type: "input_text", text: `Candidate ${i + 1}:` });
+    content.push({ type: "input_image", image_url: `data:image/jpeg;base64,${b64}` });
+  });
+  const res = (await metaPostJSON("/responses", {
+    model: MODEL_ID,
+    reasoning: { effort: "medium" },
+    input: [{ role: "user", content }],
+  })) as ResponsesApiResult;
+  const parsed = extractJson(extractText(res)) as { scores?: unknown; best?: unknown; reason?: unknown };
+  const scores = Array.from({ length: n }, (_, i) => {
+    const v = Number(Array.isArray(parsed.scores) ? parsed.scores[i] : NaN);
+    return Number.isFinite(v) ? Math.max(0, Math.min(10, v)) : 0;
+  });
+  const top = scores.indexOf(Math.max(...scores));
+  const named = Number(parsed.best) - 1;
+  // Trust the explicit pick when it agrees with the scores (ties); otherwise go with the scores.
+  const best = Number.isInteger(named) && named >= 0 && named < n && scores[named] >= scores[top] ? named : top;
+  return { best, scores, reason: typeof parsed.reason === "string" ? parsed.reason : undefined };
 }

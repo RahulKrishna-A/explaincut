@@ -10,7 +10,9 @@ import { captionMetrics, reserveCaptionBand } from "./captions/buildCaptions";
 import { DEFAULT_RENDER_OPTIONS } from "@/types/renderOptions";
 import { buildMaskSamples } from "./segmentation/buildMaskSamples";
 import { buildSmoothedMaskVideo, type MaskSample } from "./ffmpeg/maskToAlpha";
-import { composeDiagramBehindPerson, composeDiagramOverlay } from "./ffmpeg/composeMaskedSpeaker";
+import { composeDiagramBehindPerson, composeDiagramOverlay, type ZoomSpec } from "./ffmpeg/composeMaskedSpeaker";
+import { computeHeadTops } from "./layout/headTops";
+import { reserveKeywordBand } from "./layout/buildKeywords";
 import { getDurationSeconds, getVideoDimensions } from "./ffmpeg/run";
 import { analyzeFreeSpace } from "./layout/freeSpace";
 import { defaultFreeSpace } from "./layout/defaultFreeSpace";
@@ -95,7 +97,12 @@ export async function runPipeline(jobId: string): Promise<void> {
     const maskSamples: MaskSample[] | null = await segmentation;
     let space = await resolveFreeSpace(inputPath, maskSamples);
     // Captions own the bottom band - keep drawings out of it.
-    if (captions.enabled) space = reserveCaptionBand(space, captionMetrics(space.width, space.height, captions).bandTop);
+    if (captions.enabled) space = reserveCaptionBand(space, captionMetrics(space.width, space.height, captions, options.style).bandTop);
+    if (options.style === "hormozi") {
+      // Where the speaker's head is, so keywords can sit right behind it, and drawings stay clear of that band.
+      const tops = maskSamples ? await computeHeadTops(maskSamples.map((m) => m.pngPath), space.width, space.height) : [];
+      if (tops.length > 0) space = reserveKeywordBand({ ...space, headTops: { intervalSeconds: maskSamples![0].intervalSeconds, y: tops } });
+    }
     await fs.writeFile(jobFile(jobId, "free-space.json"), JSON.stringify(space, null, 2));
 
     updateJob(jobId, { stage: "planning" });
@@ -112,7 +119,7 @@ export async function runPipeline(jobId: string): Promise<void> {
     if (failed.length > 0) console.warn(`Job ${jobId}: ${failed.length} sticker(s) left out:`, failed);
     await fs.writeFile(jobFile(jobId, "stickers.json"), JSON.stringify(stickers));
 
-    const renderPlan = buildRenderPlan(resolvedPlan, space, stickers);
+    const renderPlan = buildRenderPlan(resolvedPlan, space, stickers, options.style);
     await fs.writeFile(jobFile(jobId, "render-plan.json"), JSON.stringify(renderPlan, null, 2));
 
     updateJob(jobId, { stage: "rendering_diagram" });
@@ -124,7 +131,8 @@ export async function runPipeline(jobId: string): Promise<void> {
           transcript,
           captions,
           { width: renderPlan.width, height: renderPlan.height, fps: renderPlan.fps },
-          jobFile(jobId, "caption-layer.mov")
+          jobFile(jobId, "caption-layer.mov"),
+          options.style
         ).then(
           () => jobFile(jobId, "caption-layer.mov"),
           (err): undefined => {
@@ -147,6 +155,7 @@ export async function runPipeline(jobId: string): Promise<void> {
     let usedMasking = false;
 
     /** Draw the layer and composite it onto the original. Run once, and again by the self-review fix. */
+    const zoom: ZoomSpec | undefined = options.style === "hormozi" ? { width: renderPlan.width, height: renderPlan.height } : undefined;
     const renderAndCompose = async (plan: RenderPlan) => {
       await renderDiagramLayer(plan, diagramLayerPath);
       const [captionLayerPath, maskVideoPath] = await Promise.all([captionLayer, maskVideo]);
@@ -154,13 +163,13 @@ export async function runPipeline(jobId: string): Promise<void> {
       usedMasking = false;
       if (maskVideoPath) {
         try {
-          await composeDiagramBehindPerson(inputPath, diagramLayerPath, maskVideoPath, nextOutputPath, captionLayerPath);
+          await composeDiagramBehindPerson(inputPath, diagramLayerPath, maskVideoPath, nextOutputPath, captionLayerPath, zoom);
           usedMasking = true;
         } catch (err) {
           console.error(`Masked composite failed for job ${jobId} - overlaying without a punch-out:`, err);
         }
       }
-      if (!usedMasking) await composeDiagramOverlay(inputPath, diagramLayerPath, nextOutputPath, captionLayerPath);
+      if (!usedMasking) await composeDiagramOverlay(inputPath, diagramLayerPath, nextOutputPath, captionLayerPath, zoom);
       // Atomic swap: someone may be watching the first cut while the self-review re-renders.
       await fs.rename(nextOutputPath, outputPath);
     };
@@ -184,7 +193,7 @@ export async function runPipeline(jobId: string): Promise<void> {
             const { plan } = validateAndResolveDiagramPlan(draftRaw, transcript);
             if (plan.scenes.length === 0) throw new Error("draft plan resolved to zero scenes");
             // Stickers already generated are laid out too; new sticker subjects in a draft are only generated if it's rendered.
-            return buildRenderPlan(plan, space, stickers);
+            return buildRenderPlan(plan, space, stickers, options.style);
           },
           rerender: async (revisedRaw) => {
             const { plan, issues: revIssues } = validateAndResolveDiagramPlan(revisedRaw, transcript);
@@ -193,7 +202,7 @@ export async function runPipeline(jobId: string): Promise<void> {
             // Only stickers the revision newly asks for get generated.
             ({ assets: stickers } = await prepareStickers(plan, stickers));
             await fs.writeFile(jobFile(jobId, "stickers.json"), JSON.stringify(stickers));
-            const revisedRender = buildRenderPlan(plan, space, stickers);
+            const revisedRender = buildRenderPlan(plan, space, stickers, options.style);
             await renderAndCompose(revisedRender);
             return { renderPlan: revisedRender, rawPlan: revisedRaw };
           },

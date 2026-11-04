@@ -35,12 +35,18 @@ export interface SelfReviewSettings {
   enabled: boolean;
 }
 
+export const RENDER_STYLES = ["classic", "journal", "hormozi"] as const;
+export type RenderStyle = (typeof RENDER_STYLES)[number];
+
 export interface RenderOptions {
+  /** Look of the animation layer. */
+  style: RenderStyle;
   captions: CaptionSettings;
   selfReview: SelfReviewSettings;
 }
 
 export const DEFAULT_RENDER_OPTIONS: RenderOptions = {
+  style: "classic",
   captions: {
     enabled: true,
     font: "sans",

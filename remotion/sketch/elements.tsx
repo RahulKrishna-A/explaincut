@@ -20,6 +20,7 @@ import {
 import { PACKET_TRIP_SECONDS, edgePhases, nodePhases, textPhases, type Phase } from "@/lib/layout/timing";
 import { handFontFamily } from "../fonts";
 import { iconStrokes } from "./icons";
+import { backOut, scaleAbout, settle } from "./motion";
 import {
   arrowHead,
   boil,
@@ -52,6 +53,10 @@ export interface DrawCtx {
   /** 1% of the frame's short side. */
   u: number;
   palette: Palette;
+  /** Journal style: scrapbook details (tape, paper tones). */
+  journal?: boolean;
+  /** Motion energy of the current scene, from the speaker's tone (1 = neutral). */
+  energy?: number;
 }
 
 export const clamp01 = (v: number) => Math.max(0, Math.min(1, v));
@@ -290,8 +295,13 @@ export const NodeView: React.FC<{ el: NodeElement; ctx: DrawCtx }> = ({ el, ctx 
   const textBlockH = el.lines.length * el.fontSize * LINE_HEIGHT_EM;
   const textY = content.text.y + (content.text.h - textBlockH) / 2;
 
+  // Follow-through: the moment the outline closes, the shape gives a tiny squash and settles.
+  const outlineClosed = (ph.outline.end * el.duration) / Math.max(1e-3, ph.total);
+  const squash = settle(local - outlineClosed, ctx.fps, ctx.energy);
+  const c = center(el.box);
+
   return (
-    <g>
+    <g transform={scaleAbout(c.x, c.y, squash.sx, squash.sy)}>
       <defs>
         <clipPath id={clipId}>
           <path d={`${toPath(shape.fill)}Z`} />
@@ -372,6 +382,10 @@ export const EdgeView: React.FC<{ el: EdgeElement; ctx: DrawCtx }> = ({ el, ctx 
     );
   }
 
+  // The head snaps on: drawn small, it springs a touch past full size and back.
+  const pHead = p(ph.head);
+  const headSnap = pHead > 0 ? 0.55 + 0.45 * backOut(pHead, ctx.energy) : 0;
+
   return (
     <g>
       <Sketch
@@ -382,7 +396,9 @@ export const EdgeView: React.FC<{ el: EdgeElement; ctx: DrawCtx }> = ({ el, ctx 
         ctx={ctx}
         dash={el.dashed ? `${ctx.u * 1.8} ${ctx.u * 1.5}` : undefined}
       />
-      <Sketch strokes={headsLive} progress={p(ph.head)} color={ctx.palette.ink} width={sw * 0.9} ctx={ctx} tip={false} />
+      <g transform={headSnap > 0 ? scaleAbout(g.p1.x, g.p1.y, headSnap) : undefined}>
+        <Sketch strokes={headsLive} progress={p(ph.head)} color={ctx.palette.ink} width={sw * 0.9} ctx={ctx} tip={false} />
+      </g>
       {label}
     </g>
   );
@@ -499,7 +515,19 @@ export const MarkView: React.FC<{ el: MarkElement; ctx: DrawCtx }> = ({ el, ctx 
     }
   }
   const live = liven(strokes, r, ctx, el.seed, el.mark === "highlight" ? 0 : u * 0.15, done);
+  // Emphasis lands with a little life: ticks, crosses and sparkles pop; a circle squeezes as it closes.
+  const tc = center(el.target);
+  let motion: string | undefined;
+  if (el.mark === "check" || el.mark === "cross" || el.mark === "sparkle") {
+    const pop = 0.6 + 0.4 * backOut(clamp01(local / Math.max(1, el.duration)), ctx.energy);
+    const at = el.mark === "check" ? { x: x + w, y: y } : tc;
+    motion = scaleAbout(at.x, at.y, pop);
+  } else if (el.mark === "circle") {
+    const sq = settle(local - el.duration, ctx.fps, ctx.energy, 1.3);
+    motion = scaleAbout(tc.x, tc.y, sq.sx, sq.sy);
+  }
   return (
+    <g transform={motion}>
     <Sketch
       strokes={live}
       progress={progress}
@@ -510,6 +538,7 @@ export const MarkView: React.FC<{ el: MarkElement; ctx: DrawCtx }> = ({ el, ctx 
       halo={el.mark !== "highlight"}
       dash={el.mark === "divider" ? `${u * 2} ${u * 1.6}` : undefined}
     />
+    </g>
   );
 };
 
@@ -551,8 +580,12 @@ export const TextView: React.FC<{ el: TextElement; ctx: DrawCtx }> = ({ el, ctx 
     extra = <Sketch strokes={liven([shaft, head], r, ctx, el.seed, u * 0.12, done)} progress={p(ph.extra)} color={accent} width={strokeWidth(ctx) * 0.85} ctx={ctx} />;
   }
 
+  // Once the last letter is down, the block gives a small settle - a title a little more than a note.
+  const written = (ph.write.end * el.duration) / Math.max(1e-3, ph.total);
+  const sq = settle(local - written, ctx.fps, ctx.energy, el.variant === "title" ? 1.1 : 0.7);
+
   return (
-    <g>
+    <g transform={scaleAbout(el.x + el.blockWidth / 2, el.y + blockH / 2, sq.sx, sq.sy)}>
       <HandText
         id={el.id}
         lines={el.lines}
