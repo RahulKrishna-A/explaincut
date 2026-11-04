@@ -43,6 +43,7 @@ next-env.d.ts
 
 # ExplainCut runtime job data and large media (keep JSON fixtures tracked)
 /data/jobs/
+/data/stickers/
 /data/fixtures/*.mp4
 /data/fixtures/*.mov
 /data/fixtures/.smoke-test/

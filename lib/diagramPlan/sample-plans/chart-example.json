@@ -1,0 +1,31 @@
+{
+  "version": "2.0",
+  "fps": 30,
+  "durationSeconds": 14,
+  "scenes": [
+    {
+      "id": "s3",
+      "layout": "chart",
+      "nodes": [],
+      "edges": [],
+      "chart": {
+        "type": "bar",
+        "unit": "ms",
+        "yLabel": "Response time",
+        "data": [
+          { "id": "cache", "label": "Cache", "value": 8 },
+          { "id": "db", "label": "Database", "value": 120 },
+          { "id": "api", "label": "External API", "value": 450 }
+        ]
+      },
+      "ops": [
+        { "id": "t3", "type": "title", "text": "Why caching wins", "trigger": { "word": "caching", "wordIndex": 41 } },
+        { "id": "p1", "type": "plot", "target": "cache", "trigger": { "word": "cache", "wordIndex": 45 } },
+        { "id": "p2", "type": "plot", "target": "db", "trigger": { "word": "database", "wordIndex": 50 } },
+        { "id": "p3", "type": "plot", "target": "api", "trigger": { "word": "API", "wordIndex": 56 } },
+        { "id": "m1", "type": "circle", "target": "cache", "trigger": { "word": "fifty", "wordIndex": 61 } },
+        { "id": "n1", "type": "note", "target": "api", "text": "50x slower", "trigger": { "word": "slower", "wordIndex": 63 } }
+      ]
+    }
+  ]
+}

@@ -42,6 +42,7 @@
       "ops": [
         { "id": "p1", "type": "draw", "target": "ft", "trigger": { "word": "fine-tuning", "wordIndex": 44 } },
         { "id": "p2", "type": "draw", "target": "ftcost", "trigger": { "word": "expensive", "wordIndex": 48 } },
+        { "id": "p2s", "type": "sticker", "target": "ftcost", "text": "a stack of gold coins", "trigger": { "word": "expensive", "wordIndex": 48 } },
         { "id": "p3", "type": "cross", "target": "ftcost", "trigger": { "word": "skip", "wordIndex": 51 } },
         { "id": "p4", "type": "draw", "target": "rag", "trigger": { "word": "RAG", "wordIndex": 54 } },
         { "id": "p5", "type": "draw", "target": "ragcost", "trigger": { "word": "updated", "wordIndex": 58 } },

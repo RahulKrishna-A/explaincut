@@ -38,7 +38,7 @@ export type IconName = (typeof ICON_NAMES)[number];
 export const ACCENTS = ["blue", "pink", "green", "orange", "purple", "yellow"] as const;
 export type Accent = (typeof ACCENTS)[number];
 
-export const SCENE_LAYOUTS = ["flow", "hub", "stack", "cycle", "compare"] as const;
+export const SCENE_LAYOUTS = ["flow", "hub", "stack", "cycle", "compare", "tree", "timeline", "chart"] as const;
 export type SceneLayout = (typeof SCENE_LAYOUTS)[number];
 
 export const OP_TYPES = [
@@ -53,6 +53,8 @@ export const OP_TYPES = [
   "cross", // cross a node out
   "sparkle", // emphasis strokes around a node
   "note", // handwritten annotation (text) next to a node (target optional)
+  "plot", // chart scenes: plot one data point (target = datum id) - a bar grows, a line extends, a slice sweeps
+  "sticker", // slap a small generated sticker illustration (text = what it shows) next to a node (target optional)
 ] as const;
 export type DiagramOpType = (typeof OP_TYPES)[number];
 
@@ -89,12 +91,36 @@ export interface DiagramOp {
   trigger: DiagramOpTrigger;
 }
 
+export const CHART_TYPES = ["bar", "line", "pie"] as const;
+export type ChartType = (typeof CHART_TYPES)[number];
+
+export interface ChartDatum {
+  id: string;
+  label: string;
+  value: number;
+  color?: Accent;
+}
+
+/** Data for layout "chart". Datums behave like nodes: ops "plot"/"circle"/"note"... target their ids. */
+export interface ChartSpec {
+  type: ChartType;
+  data: ChartDatum[];
+  /** Appended to written values, e.g. "%", "ms", "x", "k". */
+  unit?: string;
+  /** Short axis caption for bar/line, e.g. "Latency". */
+  yLabel?: string;
+  /** False when values are illustrative (speaker gave no real numbers) - only the shape is drawn. */
+  showValues?: boolean;
+}
+
 export interface DiagramScene {
   id: string;
   layout: SceneLayout;
   nodes: DiagramNode[];
   edges: DiagramEdge[];
   ops: DiagramOp[];
+  /** Required when layout === "chart". */
+  chart?: ChartSpec;
 }
 
 /** Raw output from Muse Spark - not yet validated or resolved to frames. */
@@ -159,6 +185,8 @@ interface ElementBase {
   duration: number;
   seed: number;
   color: Accent;
+  /** Frame of the word that asked for this element (absent for auto-filled elements). Used by the timing check. */
+  cue?: number;
 }
 
 export interface NodeElement extends ElementBase {
@@ -190,13 +218,73 @@ export interface PacketElement extends ElementBase {
   trips: number;
 }
 
-export type MarkType = "circle" | "underline" | "highlight" | "check" | "cross" | "sparkle" | "divider";
+export type MarkType = "circle" | "underline" | "highlight" | "check" | "cross" | "sparkle" | "divider" | "spine";
 
 export interface MarkElement extends ElementBase {
   kind: "mark";
   mark: MarkType;
   target: Rect;
   targetShape: NodeShape;
+  /** "spine" only: marker dots along the line (timeline events). */
+  ticks?: { x: number; y: number }[];
+}
+
+// --- Charts ----------------------------------------------------------------
+
+export interface AxesElement extends ElementBase {
+  kind: "axes";
+  /** Plot area; the x axis runs along its bottom edge, the y axis up its left edge. */
+  plot: Rect;
+  /** Light guide lines across the plot (fractions of its height, 0 = baseline). */
+  grid: number[];
+  yLabel?: string;
+  fontSize: number;
+  /** Faint paper card behind the whole chart so it reads over any background. */
+  card: Rect;
+}
+
+export interface BarElement extends ElementBase {
+  kind: "bar";
+  /** Final bar rectangle (it grows from the baseline into this). */
+  bar: Rect;
+  orientation: "vertical" | "horizontal";
+  label: string;
+  /** Top-left of the category label block. */
+  labelAt: { x: number; y: number; w: number; align: "left" | "center" | "right" };
+  value?: string;
+  valueAt?: { x: number; y: number; w: number; align: "left" | "center" };
+  fontSize: number;
+}
+
+export interface PointElement extends ElementBase {
+  kind: "point";
+  at: { x: number; y: number };
+  /** Previous point - the line segment is traced from there to here. */
+  prev?: { x: number; y: number };
+  /** Baseline y, for the soft area fill under the segment. */
+  baseline: number;
+  label: string;
+  labelAt: { x: number; y: number; w: number };
+  value?: string;
+  valueAt?: { x: number; y: number; w: number };
+  fontSize: number;
+}
+
+export interface SliceElement extends ElementBase {
+  kind: "slice";
+  cx: number;
+  cy: number;
+  r: number;
+  /** Donut hole radius (0 = full pie). */
+  inner: number;
+  /** Radians, clockwise from 12 o'clock. */
+  a0: number;
+  a1: number;
+  lines: string[];
+  labelAt: { x: number; y: number; w: number; align: "left" | "center" | "right" };
+  /** Where the short leader line from the slice to its label starts and ends. */
+  leader?: { from: { x: number; y: number }; to: { x: number; y: number } };
+  fontSize: number;
 }
 
 export interface TextElement extends ElementBase {
@@ -213,7 +301,32 @@ export interface TextElement extends ElementBase {
   pointTo?: Rect;
 }
 
-export type RenderElement = NodeElement | EdgeElement | PacketElement | MarkElement | TextElement;
+/** A small illustration generated by Muse Image, slapped on like a sticker. */
+export interface StickerElement extends ElementBase {
+  kind: "sticker";
+  box: Rect;
+  /** PNG data URL with a transparent background. */
+  src: string;
+  /** Resting tilt, degrees. */
+  tilt: number;
+  /** What it shows (for the review / logs). */
+  subject: string;
+}
+
+/** Generated sticker images, keyed by stickerKey(subject). */
+export type StickerAssets = Record<string, { src: string; width: number; height: number }>;
+
+export type RenderElement =
+  | NodeElement
+  | EdgeElement
+  | PacketElement
+  | MarkElement
+  | TextElement
+  | AxesElement
+  | BarElement
+  | PointElement
+  | SliceElement
+  | StickerElement;
 
 export interface RenderScene {
   id: string;
@@ -233,4 +346,6 @@ export interface RenderPlan {
   /** For debugging overlays only. */
   regions: FreeRegion[];
   scenes: RenderScene[];
+  /** Things the plan asked for that never got drawn (the scene ended before the pen got there). */
+  dropped?: { sceneId: string; target: string; label: string; frame: number }[];
 }

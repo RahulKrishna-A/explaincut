@@ -14,11 +14,16 @@ export async function GET(
   }
 
   const asAttachment = request.nextUrl.searchParams.get("download") === "1";
-  const buffer = await fs.readFile(jobFile(jobId, "output.mp4"));
+  // "before" = the first cut, before the self-review fixed it.
+  const before = request.nextUrl.searchParams.get("variant") === "before";
+  if (before && !job.selfReview?.hasBefore) {
+    return NextResponse.json({ error: "No before cut for this job" }, { status: 404 });
+  }
+  const buffer = await fs.readFile(jobFile(jobId, before ? "output-before.mp4" : "output.mp4"));
   return new NextResponse(buffer, {
     headers: {
       "Content-Type": "video/mp4",
-      "Content-Disposition": `${asAttachment ? "attachment" : "inline"}; filename="explaincut-${jobId}.mp4"`,
+      "Content-Disposition": `${asAttachment ? "attachment" : "inline"}; filename="explaincut-${jobId}${before ? "-before" : ""}.mp4"`,
     },
   });
 }

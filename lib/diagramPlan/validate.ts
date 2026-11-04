@@ -1,6 +1,7 @@
 import { diagramPlanSchema } from "./schema";
 import type { Transcript } from "@/types/transcript";
 import type {
+  ChartSpec,
   DiagramOp,
   DiagramPlan,
   DiagramScene,
@@ -54,20 +55,62 @@ function resolveTriggerSeconds(op: DiagramOp, transcript: Transcript): number | 
   return words[claimedIndex].startSeconds;
 }
 
-const NODE_TARGET_OPS = new Set(["draw", "circle", "underline", "highlight", "check", "cross", "sparkle"]);
+const MARK_OPS = new Set(["circle", "underline", "highlight", "check", "cross", "sparkle"]);
+const MAX_STICKERS_PER_SCENE = 1;
 const EDGE_TARGET_OPS = new Set(["connect", "flow"]);
 
-function checkOp(op: DiagramOp, scene: DiagramScene, nodeIds: Set<string>, edgeIds: Set<string>): string | null {
-  if (NODE_TARGET_OPS.has(op.type)) {
+/** Minimum points that make each chart type worth drawing. */
+const MIN_POINTS: Record<ChartSpec["type"], number> = { bar: 2, line: 3, pie: 2 };
+const MAX_POINTS: Record<ChartSpec["type"], number> = { bar: 6, line: 8, pie: 5 };
+
+/** Cleans a chart spec; returns null if it can't make a readable chart. */
+function cleanChart(chart: ChartSpec | undefined, sceneId: string, issues: ValidationIssue[]): ChartSpec | null {
+  if (!chart) return null;
+  const seen = new Set<string>();
+  let data = chart.data.filter((d) => (seen.has(d.id) ? false : (seen.add(d.id), true)));
+  if (chart.type !== "line") data = data.map((d) => ({ ...d, value: Math.max(0, d.value) }));
+  if (chart.type === "pie") data = data.filter((d) => d.value > 0);
+  if (data.length > MAX_POINTS[chart.type]) {
+    issues.push({ opId: sceneId, reason: `chart had ${data.length} points - keeping the first ${MAX_POINTS[chart.type]}` });
+    data = data.slice(0, MAX_POINTS[chart.type]);
+  }
+  if (data.length < MIN_POINTS[chart.type]) {
+    issues.push({ opId: sceneId, reason: `${chart.type} chart needs at least ${MIN_POINTS[chart.type]} data points` });
+    return null;
+  }
+  if (chart.type !== "line" && data.every((d) => d.value === 0)) {
+    issues.push({ opId: sceneId, reason: "chart values are all zero" });
+    return null;
+  }
+  return { ...chart, data };
+}
+
+function checkOp(
+  op: DiagramOp,
+  scene: DiagramScene,
+  nodeIds: Set<string>,
+  edgeIds: Set<string>,
+  datumIds: Set<string>
+): string | null {
+  if (op.type === "draw") {
     return op.target && nodeIds.has(op.target) ? null : `node "${op.target}" not found in scene ${scene.id}`;
+  }
+  if (op.type === "plot") {
+    return op.target && datumIds.has(op.target) ? null : `data point "${op.target}" not found in scene ${scene.id}`;
+  }
+  if (MARK_OPS.has(op.type)) {
+    // Emphasis works on nodes and on chart data points alike.
+    return op.target && (nodeIds.has(op.target) || datumIds.has(op.target))
+      ? null
+      : `target "${op.target}" not found in scene ${scene.id}`;
   }
   if (EDGE_TARGET_OPS.has(op.type)) {
     return op.target && edgeIds.has(op.target) ? null : `edge "${op.target}" not found in scene ${scene.id}`;
   }
-  if (op.type === "title" || op.type === "note") {
+  if (op.type === "title" || op.type === "note" || op.type === "sticker") {
     if (!op.text?.trim()) return `${op.type} op has no text`;
-    if (op.type === "note" && op.target && !nodeIds.has(op.target)) {
-      // A note pointing at a missing node is still worth writing - just unanchored.
+    if (op.type !== "title" && op.target && !nodeIds.has(op.target) && !datumIds.has(op.target)) {
+      // A note/sticker pointing at a missing node is still worth showing - just unanchored.
       op.target = undefined;
     }
     return null;
@@ -88,7 +131,18 @@ export function validateAndResolveDiagramPlan(rawPlan: unknown, transcript: Tran
   const durationSeconds = transcript.durationSeconds || parsed.durationSeconds;
 
   const scenes: ResolvedDiagramScene[] = [];
-  for (const scene of parsed.scenes) {
+  for (const rawScene of parsed.scenes) {
+    let scene: DiagramScene = rawScene;
+    if (scene.layout === "chart" || scene.chart) {
+      const chart = cleanChart(scene.chart, scene.id, issues);
+      if (chart) {
+        // A chart scene is the chart (+ title/notes/emphasis); stray nodes would collide with it.
+        scene = { ...scene, layout: "chart", chart, nodes: [], edges: [] };
+      } else {
+        scene = { ...scene, layout: scene.layout === "chart" ? "flow" : scene.layout, chart: undefined };
+      }
+    }
+    const datumIds = new Set(scene.chart?.data.map((d) => d.id) ?? []);
     // De-duplicate node ids (keep first) - the layout keys off them.
     const seen = new Set<string>();
     const nodes = scene.nodes.filter((n) => (seen.has(n.id) ? false : (seen.add(n.id), true)));
@@ -102,8 +156,14 @@ export function validateAndResolveDiagramPlan(rawPlan: unknown, transcript: Tran
     const edgeIds = new Set(edges.map((e) => e.id));
 
     const ops: ResolvedDiagramOp[] = [];
+    let stickers = 0;
     for (const op of scene.ops) {
-      const problem = checkOp(op, scene, nodeIds, edgeIds);
+      const problem = checkOp(op, scene, nodeIds, edgeIds, datumIds);
+      // Stickers are seasoning: one per scene at most, or they turn into clutter.
+      if (!problem && op.type === "sticker" && ++stickers > MAX_STICKERS_PER_SCENE) {
+        issues.push({ opId: op.id, reason: `more than ${MAX_STICKERS_PER_SCENE} sticker in scene ${scene.id} - dropped` });
+        continue;
+      }
       if (problem) {
         issues.push({ opId: op.id, reason: problem });
         continue;
@@ -120,7 +180,7 @@ export function validateAndResolveDiagramPlan(rawPlan: unknown, transcript: Tran
       });
     }
 
-    if (nodes.length === 0 && ops.length === 0) continue;
+    if (nodes.length === 0 && !scene.chart && ops.length === 0) continue;
     ops.sort((a, b) => a.frame - b.frame);
     scenes.push({ ...scene, nodes, edges, ops });
   }
@@ -132,12 +192,15 @@ export function validateAndResolveDiagramPlan(rawPlan: unknown, transcript: Tran
     scenes.forEach((scene, si) => {
       const sceneStart = (totalFrames * si) / scenes.length;
       const sceneLen = totalFrames / scenes.length;
-      scene.ops = scene.nodes.map((node, i) => ({
-        id: `auto-${scene.id}-${node.id}`,
-        type: "draw" as const,
-        target: node.id,
+      const targets = scene.chart
+        ? scene.chart.data.map((d) => ({ id: d.id, type: "plot" as const }))
+        : scene.nodes.map((n) => ({ id: n.id, type: "draw" as const }));
+      scene.ops = targets.map((t, i) => ({
+        id: `auto-${scene.id}-${t.id}`,
+        type: t.type,
+        target: t.id,
         trigger: { word: "", wordIndex: 0, timestampSeconds: 0 },
-        frame: Math.round(sceneStart + (sceneLen * (i + 0.5)) / Math.max(1, scene.nodes.length)),
+        frame: Math.round(sceneStart + (sceneLen * (i + 0.5)) / Math.max(1, targets.length)),
       }));
     });
     issues.push({ opId: "*", reason: "no ops resolvable - drawing nodes evenly as fallback" });

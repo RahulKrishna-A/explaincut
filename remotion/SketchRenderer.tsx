@@ -2,11 +2,13 @@ import React from "react";
 import { interpolate, useCurrentFrame } from "remotion";
 import type { EdgeElement, RenderPlan, RenderScene } from "@/types/diagramPlan";
 import { EdgeView, MarkView, NodeView, PacketView, TextView, type DrawCtx } from "./sketch/elements";
+import { AxesView, BarView, PointView, SliceView } from "./sketch/charts";
 import { PALETTES } from "./sketch/theme";
+import { StickerView, usePreloadStickers } from "./sketch/sticker";
 
 const ERASE_SECONDS = 0.45;
 /** Paint order inside a scene: arrows tuck under boxes, emphasis and notes sit on top. */
-const Z: Record<string, number> = { edge: 0, packet: 1, node: 2, mark: 3, text: 4 };
+const Z: Record<string, number> = { axes: -1, edge: 0, packet: 1, node: 2, bar: 2, point: 2, slice: 2, mark: 3, sticker: 3.5, text: 4 };
 
 const SceneLayer: React.FC<{ scene: RenderScene; ctx: DrawCtx }> = ({ scene, ctx }) => {
   const { frame, fps, u } = ctx;
@@ -35,6 +37,16 @@ const SceneLayer: React.FC<{ scene: RenderScene; ctx: DrawCtx }> = ({ scene, ctx
             return <MarkView key={el.id} el={el} ctx={ctx} />;
           case "text":
             return <TextView key={el.id} el={el} ctx={ctx} />;
+          case "axes":
+            return <AxesView key={el.id} el={el} ctx={ctx} />;
+          case "bar":
+            return <BarView key={el.id} el={el} ctx={ctx} />;
+          case "point":
+            return <PointView key={el.id} el={el} ctx={ctx} />;
+          case "slice":
+            return <SliceView key={el.id} el={el} ctx={ctx} />;
+          case "sticker":
+            return <StickerView key={el.id} el={el} ctx={ctx} />;
           default:
             return null;
         }
@@ -49,6 +61,7 @@ export const SketchRenderer: React.FC<{ plan: RenderPlan; showRegions?: boolean 
   const u = Math.min(width, height) / 100;
   const palette = PALETTES[plan.theme] ?? PALETTES.ink;
   const ctx: DrawCtx = { frame, fps, width, height, u, palette };
+  usePreloadStickers([...new Set(plan.scenes.flatMap((s) => s.elements.flatMap((el) => (el.kind === "sticker" ? [el.src] : []))))]);
 
   return (
     <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`} style={{ position: "absolute", inset: 0 }}>

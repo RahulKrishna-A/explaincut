@@ -8,6 +8,8 @@
  */
 import type {
   Accent,
+  AxesElement,
+  BarElement,
   DiagramNode,
   EdgeElement,
   FreeRegion,
@@ -16,13 +18,17 @@ import type {
   MarkType,
   NodeElement,
   NodeShape,
+  PointElement,
   Rect,
   RenderElement,
   RenderPlan,
   RenderScene,
   ResolvedDiagramPlan,
   ResolvedDiagramScene,
+  SliceElement,
+  StickerAssets,
 } from "@/types/diagramPlan";
+import { stickerKey } from "./stickerKey";
 import {
   SHAPE_ASPECT,
   center,
@@ -36,7 +42,19 @@ import {
   wrapText,
   LINE_HEIGHT_EM,
 } from "./geometry";
-import { MARK_SECONDS, PACKET_TRIP_SECONDS, edgePhases, nodePhases, textPhases } from "./timing";
+import {
+  MARK_SECONDS,
+  PACKET_TRIP_SECONDS,
+  STICKER_SECONDS,
+  axesPhases,
+  barPhases,
+  edgePhases,
+  nodePhases,
+  pointPhases,
+  slicePhases,
+  textPhases,
+} from "./timing";
+import { layoutChart, type ChartLayout } from "./chartLayout";
 
 const nodeById0 = (scene: ResolvedDiagramScene, id: string): NodeShape => scene.nodes.find((n) => n.id === id)?.shape ?? "box";
 
@@ -49,6 +67,7 @@ const MARK_COLOR: Record<MarkType, Accent> = {
   cross: "pink",
   sparkle: "yellow",
   divider: "purple",
+  spine: "purple",
 };
 
 /** Start drawing a hair before the word lands - reads as "in sync" to viewers. */
@@ -162,6 +181,8 @@ interface SceneGeometry {
   boxes: Map<string, Rect>;
   title?: { lines: string[]; fontSize: number; x: number; y: number; blockWidth: number };
   divider?: Rect;
+  spine?: { rect: Rect; ticks: { x: number; y: number }[] };
+  chart?: ChartLayout;
   occupied: Rect[];
 }
 
@@ -330,7 +351,124 @@ function layoutCompare(nodes: DiagramNode[], regions: FreeRegion[], ctx: Ctx): {
   return { boxes, divider };
 }
 
-function layoutScene(scene: ResolvedDiagramScene, space: FreeSpace, ctx: Ctx): SceneGeometry {
+/**
+ * Hierarchy: roots on top, children fanned out below (or left-to-right when
+ * the space is wide and short and the tree is deep). Parents sit centred
+ * over their children - a classic tidy tree.
+ */
+function layoutTree(scene: ResolvedDiagramScene, region: Rect, ctx: Ctx): Map<string, Rect> | null {
+  const nodes = scene.nodes;
+  if (nodes.length < 2) return null;
+  const ids = new Set(nodes.map((n) => n.id));
+  const children = new Map<string, string[]>(nodes.map((n) => [n.id, []]));
+  const hasParent = new Set<string>();
+  for (const e of scene.edges) {
+    if (!ids.has(e.from) || !ids.has(e.to) || hasParent.has(e.to) || e.to === e.from) continue;
+    children.get(e.from)!.push(e.to);
+    hasParent.add(e.to);
+  }
+  const roots = nodes.filter((n) => !hasParent.has(n.id)).map((n) => n.id);
+  if (roots.length === 0) roots.push(nodes[0].id);
+
+  // Leaves get consecutive slots; a parent is centred over its children.
+  const depth = new Map<string, number>();
+  const slot = new Map<string, number>();
+  let nextLeaf = 0;
+  const visit = (id: string, d: number): number => {
+    depth.set(id, d);
+    const kids = children.get(id)!.filter((k) => !depth.has(k));
+    if (kids.length === 0) {
+      slot.set(id, nextLeaf);
+      return nextLeaf++;
+    }
+    const xs = kids.map((k) => visit(k, d + 1));
+    const x = (xs[0] + xs[xs.length - 1]) / 2;
+    slot.set(id, x);
+    return x;
+  };
+  for (const r of roots) if (!depth.has(r)) visit(r, 0);
+  for (const n of nodes) if (!depth.has(n.id)) visit(n.id, 0);
+
+  const levels = Math.max(...depth.values()) + 1;
+  const breadth = Math.max(1, nextLeaf);
+  const m = minCell(ctx);
+  const aspect = Math.max(...nodes.map((n) => SHAPE_ASPECT[n.shape ?? "box"]));
+  // Score = how big a node of the preferred aspect can get in each orientation.
+  const fitScore = (cw: number, ch: number) => Math.min(cw / aspect, ch) * (cw < m.w * 0.8 || ch < m.h * 0.8 ? 0.5 : 1);
+  const down = fitScore(region.w / breadth, region.h / levels);
+  const right = fitScore(region.w / levels, region.h / breadth);
+  const vertical = down >= right * 0.9;
+
+  const boxes = new Map<string, Rect>();
+  for (const n of nodes) {
+    const d = depth.get(n.id)!;
+    const s = slot.get(n.id)!;
+    const cell = vertical
+      ? { w: region.w / breadth, h: region.h / levels, x: region.x + (region.w / breadth) * s, y: region.y + (region.h / levels) * d }
+      : { w: region.w / levels, h: region.h / breadth, x: region.x + (region.w / levels) * d, y: region.y + (region.h / breadth) * s };
+    // Parents may stretch wider than one leaf slot - their row has room.
+    const kids = children.get(n.id)!.length;
+    const grow = vertical && kids > 1 ? Math.min(kids, 2) : 1;
+    const wide = { ...cell, x: cell.x - (cell.w * (grow - 1)) / 2, w: cell.w * grow };
+    const clipped = { ...wide, x: Math.max(region.x, wide.x), w: Math.min(region.x + region.w, wide.x + wide.w) - Math.max(region.x, wide.x) };
+    // Leave a real gap between levels so the parent -> child arrows have room to read.
+    const gapped = vertical
+      ? { ...clipped, y: clipped.y + clipped.h * 0.16, h: clipped.h * 0.68 }
+      : { ...clipped, x: clipped.x + clipped.w * 0.14, w: clipped.w * 0.72 };
+    boxes.set(n.id, boxInCell(gapped, n.shape ?? "box", ctx));
+  }
+  return boxes;
+}
+
+/** Events along a hand-drawn time arrow, alternating either side of it when there's room. */
+function layoutTimeline(
+  nodes: DiagramNode[],
+  region: Rect,
+  ctx: Ctx
+): { boxes: Map<string, Rect>; spine: Rect; ticks: { x: number; y: number }[] } {
+  const n = Math.max(1, nodes.length);
+  const boxes = new Map<string, Rect>();
+  const ticks: { x: number; y: number }[] = [];
+  const gap = ctx.u * 1.5;
+  if (region.w >= region.h) {
+    const alternate = region.h >= ctx.u * 24 && n > 1;
+    const spineY = alternate ? region.y + region.h / 2 : region.y + region.h - ctx.u * 2;
+    const slot = region.w / n;
+    nodes.forEach((node, i) => {
+      const cx = region.x + slot * (i + 0.5);
+      ticks.push({ x: cx, y: spineY });
+      const above = !alternate || i % 2 === 0;
+      const cw = alternate ? Math.min(slot * 1.8, region.w) : slot;
+      const cell = {
+        x: clamp(cx - cw / 2, region.x, region.x + region.w - cw),
+        y: above ? region.y : spineY + gap,
+        w: cw,
+        h: above ? spineY - gap - region.y : region.y + region.h - spineY - gap,
+      };
+      boxes.set(node.id, boxInCell(cell, node.shape ?? "pill", ctx));
+    });
+    return { boxes, spine: { x: region.x + ctx.u, y: spineY, w: region.w - ctx.u * 2, h: 0 }, ticks };
+  }
+  const alternate = region.w >= ctx.u * 44 && n > 1;
+  const spineX = alternate ? region.x + region.w / 2 : region.x + ctx.u * 2.5;
+  const slot = region.h / n;
+  nodes.forEach((node, i) => {
+    const cy = region.y + slot * (i + 0.5);
+    ticks.push({ x: spineX, y: cy });
+    const leftSide = alternate && i % 2 === 1;
+    const ch = alternate ? Math.min(slot * 1.6, region.h) : slot;
+    const cell = {
+      x: leftSide ? region.x : spineX + gap,
+      y: clamp(cy - ch / 2, region.y, region.y + region.h - ch),
+      w: leftSide ? spineX - gap - region.x : region.x + region.w - spineX - gap,
+      h: ch,
+    };
+    boxes.set(node.id, boxInCell(cell, node.shape ?? "pill", ctx));
+  });
+  return { boxes, spine: { x: spineX, y: region.y + ctx.u, w: 0, h: region.h - ctx.u * 2 }, ticks };
+}
+
+function layoutScene(scene: ResolvedDiagramScene, space: FreeSpace, ctx: Ctx, seedBase: number): SceneGeometry {
   const regions = space.regions.map((r) => ({ ...r }));
   const occupied: Rect[] = [];
   let title: SceneGeometry["title"];
@@ -353,8 +491,22 @@ function layoutScene(scene: ResolvedDiagramScene, space: FreeSpace, ctx: Ctx): S
   const nodes = scene.nodes;
   let boxes = new Map<string, Rect>();
   let divider: Rect | undefined;
-  if (nodes.length > 0 && regions.length > 0) {
+  let spine: SceneGeometry["spine"];
+  let chart: ChartLayout | undefined;
+  if (scene.layout === "chart" && scene.chart && regions.length > 0) {
+    chart = layoutChart(scene.chart, regions[0], ctx, seedBase + 3);
+    occupied.push(chart.axes?.card ?? chart.bounds);
+  } else if (nodes.length > 0 && regions.length > 0) {
     switch (scene.layout) {
+      case "tree":
+        boxes = layoutTree(scene, regions[0], ctx) ?? layoutFlow(nodes, regions, ctx);
+        break;
+      case "timeline": {
+        const res = layoutTimeline(nodes, regions[0], ctx);
+        boxes = res.boxes;
+        spine = { rect: res.spine, ticks: res.ticks };
+        break;
+      }
       case "hub":
         boxes = layoutHub(scene, regions[0], ctx) ?? layoutFlow(nodes, regions, ctx);
         break;
@@ -376,7 +528,8 @@ function layoutScene(scene: ResolvedDiagramScene, space: FreeSpace, ctx: Ctx): S
   }
   occupied.push(...boxes.values());
   if (divider) occupied.push(inflate(divider, ctx.u));
-  return { boxes, title, divider, occupied };
+  if (spine) occupied.push(inflate(spine.rect, ctx.u * 2));
+  return { boxes, title, divider, spine, chart, occupied };
 }
 
 // ---------------------------------------------------------------------------
@@ -436,6 +589,62 @@ function placeNote(
   return best;
 }
 
+/**
+ * A spot for a sticker: fully inside free space, clear of everything drawn,
+ * as big as fits and as close as possible to what it illustrates. Like a
+ * real sticker it may be stuck over a corner of its own target box (never
+ * over much of it), which also lets it fit in tight bands above the head.
+ * With no target it sits near the diagram as a whole.
+ */
+function placeSticker(aspect: number, target: Rect | undefined, occupied: Rect[], regions: FreeRegion[], ctx: Ctx): Rect | null {
+  let anchors: { x: number; y: number }[] = [];
+  if (target) {
+    anchors = [
+      { x: target.x, y: target.y },
+      { x: target.x + target.w, y: target.y },
+      { x: target.x, y: target.y + target.h },
+      { x: target.x + target.w, y: target.y + target.h },
+    ];
+  } else if (occupied.length > 0) {
+    const cs = occupied.map(center);
+    anchors = [{ x: cs.reduce((a, c) => a + c.x, 0) / cs.length, y: cs.reduce((a, c) => a + c.y, 0) / cs.length }];
+  }
+  const others = target ? occupied.filter((o) => o !== target && !(o.x === target.x && o.y === target.y && o.w === target.w)) : occupied;
+  const overlapArea = (a: Rect, b: Rect) =>
+    Math.max(0, Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x)) * Math.max(0, Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y));
+
+  for (const side of [ctx.u * 25, ctx.u * 21, ctx.u * 17, ctx.u * 14]) {
+    const w = aspect >= 1 ? side : side * aspect;
+    const h = aspect >= 1 ? side / aspect : side;
+    let best: { rect: Rect; score: number } | null = null;
+    for (const region of regions) {
+      if (w > region.w || h > region.h) continue;
+      const steps = 14;
+      for (let iy = 0; iy <= steps; iy++) {
+        for (let ix = 0; ix <= steps; ix++) {
+          const rect = { x: region.x + ((region.w - w) * ix) / steps, y: region.y + ((region.h - h) * iy) / steps, w, h };
+          if (others.some((o) => overlaps(inflate(rect, ctx.u * 1.2), o))) continue;
+          let stuck = 0;
+          if (target) {
+            const ov = overlapArea(rect, target);
+            // A corner, not the label: cap how much of the box it may cover.
+            if (ov > target.w * target.h * 0.16 || ov > w * h * 0.3) continue;
+            stuck = ov;
+          }
+          const c = center(rect);
+          const dist = anchors.length > 0 ? Math.min(...anchors.map((a) => Math.hypot(c.x - a.x, c.y - a.y))) : Math.hypot(c.x - region.x, c.y - region.y);
+          // Bigger is better; a gap from the target is worse than a little overlap.
+          const score = dist - (stuck > 0 ? ctx.u * 3 : 0);
+          if (!best || score < best.score) best = { rect, score };
+        }
+      }
+    }
+    // Too far from what it illustrates reads as random clutter - try smaller first.
+    if (best && (!target || best.score < ctx.u * 30)) return best.rect;
+  }
+  return null;
+}
+
 // ---------------------------------------------------------------------------
 // Main
 // ---------------------------------------------------------------------------
@@ -447,7 +656,7 @@ function edgeBends(scene: ResolvedDiagramScene, boxes: Map<string, Rect>, ctx: C
     const a = boxes.get(e.from);
     const b = boxes.get(e.to);
     if (!a || !b) return;
-    let bend = (i % 2 === 0 ? 1 : -1) * 0.1;
+    let bend = scene.layout === "tree" ? 0.03 : (i % 2 === 0 ? 1 : -1) * 0.1;
     if (pairs.has(`${e.to}->${e.from}`)) bend = 0.22; // same sign on the reverse edge = opposite side
     // Arc around any node sitting on the straight path.
     const ca = center(a);
@@ -469,7 +678,7 @@ function edgeBends(scene: ResolvedDiagramScene, boxes: Map<string, Rect>, ctx: C
   return bends;
 }
 
-export function buildRenderPlan(plan: ResolvedDiagramPlan, space: FreeSpace): RenderPlan {
+export function buildRenderPlan(plan: ResolvedDiagramPlan, space: FreeSpace, stickers: StickerAssets = {}): RenderPlan {
   const { width: W, height: H } = space;
   const ctx: Ctx = { W, H, u: Math.min(W, H) / 100 };
   const fps = plan.fps;
@@ -480,13 +689,17 @@ export function buildRenderPlan(plan: ResolvedDiagramPlan, space: FreeSpace): Re
 
   const sceneStarts = plan.scenes.map((s) => Math.max(0, (s.ops[0]?.frame ?? 0) - lead));
   const renderScenes: RenderScene[] = [];
+  const dropped: NonNullable<RenderPlan["dropped"]> = [];
 
-  plan.scenes.forEach((scene, si) => {
+  plan.scenes.forEach((scene0, si) => {
+    // A timeline's order is carried by its time arrow; extra arrows between events would zig-zag across it.
+    const scene: ResolvedDiagramScene = scene0.layout === "timeline" ? { ...scene0, edges: [] } : scene0;
     const sceneStart = sceneStarts[si];
     const sceneEnd = si + 1 < plan.scenes.length ? Math.max(sceneStart + eraseFrames * 2, sceneStarts[si + 1] - 1) : totalFrames + fps;
     const lastDrawFrame = sceneEnd - eraseFrames;
 
-    const geo = layoutScene(scene, space, ctx);
+    const seedBase = hash(`${scene.id}`);
+    const geo = layoutScene(scene, space, ctx, seedBase);
     const bends = edgeBends(scene, geo.boxes, ctx);
     // Arrows (and their labels) are occupied space too, so notes don't land on them.
     for (const e of scene.edges) {
@@ -504,7 +717,6 @@ export function buildRenderPlan(plan: ResolvedDiagramPlan, space: FreeSpace): Re
     }
     const nodeById = new Map(scene.nodes.map((n) => [n.id, n]));
     const edgeById = new Map(scene.edges.map((e) => [e.id, e]));
-    const seedBase = hash(`${scene.id}`);
 
     // One font size per scene so labels read as a consistent set.
     const labelMax = clamp(ctx.u * 5.8, 18, 96);
@@ -520,6 +732,9 @@ export function buildRenderPlan(plan: ResolvedDiagramPlan, space: FreeSpace): Re
     const nodeEls = new Map<string, NodeElement>();
     const edgeEls = new Map<string, EdgeElement>();
     let penFree = sceneStart;
+    /** True while filling in elements the plan declared but never triggered - those have no cue word. */
+    let autoFill = false;
+    const cueOf = (frame: number) => (autoFill ? undefined : frame);
 
     /** Single-pen scheduler: queue behind the previous stroke unless that would lag the speech too much. */
     const schedule = (wanted: number, seconds: number, earliest = 0): { start: number; duration: number } | null => {
@@ -561,8 +776,11 @@ export function buildRenderPlan(plan: ResolvedDiagramPlan, space: FreeSpace): Re
         fontSize: sceneFont,
       };
       const t = schedule(frame, nodePhases(proto, W, H).total);
-      if (!t) return null;
-      const el: NodeElement = { ...proto, ...t };
+      if (!t) {
+        if (!autoFill) dropped.push({ sceneId: scene.id, target: id, label: node.label, frame });
+        return null;
+      }
+      const el: NodeElement = { ...proto, ...t, cue: cueOf(frame) };
       nodeEls.set(id, el);
       elements.push(el);
       return el;
@@ -594,13 +812,68 @@ export function buildRenderPlan(plan: ResolvedDiagramPlan, space: FreeSpace): Re
       const earliest = Math.max(a.start + Math.round(a.duration * 0.6), b.start + Math.round(b.duration * 0.6));
       const t = schedule(frame, edgePhases(proto, W, H).total, earliest);
       if (!t) return null;
-      const el: EdgeElement = { ...proto, ...t };
+      const el: EdgeElement = { ...proto, ...t, cue: cueOf(frame) };
       edgeEls.set(id, el);
       elements.push(el);
       return el;
     };
 
-    const addMark = (mark: MarkType, target: NodeElement, frame: number, key: string) => {
+    // --- Charts: axes first, then each data point on its own word. -------------
+    type ChartPartEl = BarElement | PointElement | SliceElement;
+    const chartEls = new Map<string, ChartPartEl>();
+    let axesEl: AxesElement | null | undefined;
+    const ensureAxes = (frame: number): AxesElement | null => {
+      if (axesEl !== undefined) return axesEl;
+      const proto = geo.chart?.axes;
+      if (!proto) return (axesEl = null);
+      const t = schedule(frame, axesPhases(proto, W, H).total);
+      if (!t) return (axesEl = null);
+      axesEl = { ...proto, id: `${scene.id}:axes`, ...t };
+      elements.push(axesEl);
+      return axesEl;
+    };
+    const ensureDatum = (id: string, frame: number): ChartPartEl | null => {
+      const existing = chartEls.get(id);
+      if (existing) return existing;
+      const proto = geo.chart?.parts.get(id);
+      if (!proto) return null;
+      const axes = ensureAxes(frame);
+      const earliest = axes ? axes.start + Math.round(axes.duration * 0.75) : 0;
+      // A line segment needs the previous point on the page first.
+      const order = scene.chart?.data.findIndex((d) => d.id === id) ?? -1;
+      let after = earliest;
+      if (proto.kind === "point" && order > 0) {
+        const prevId = scene.chart!.data[order - 1].id;
+        const prev = ensureDatum(prevId, frame);
+        if (prev) after = Math.max(after, prev.start + Math.round(prev.duration * 0.8));
+      }
+      const seconds =
+        proto.kind === "bar"
+          ? barPhases(proto).total
+          : proto.kind === "point"
+            ? pointPhases(proto, W, H).total
+            : slicePhases(proto).total;
+      const t = schedule(frame, seconds, after);
+      if (!t) {
+        const d = scene.chart?.data.find((x) => x.id === id);
+        if (!autoFill && d) dropped.push({ sceneId: scene.id, target: id, label: d.label, frame });
+        return null;
+      }
+      const el = { ...proto, id: `${scene.id}:${id}`, seed: seedBase + hash(id), ...t, cue: cueOf(frame) } as ChartPartEl;
+      chartEls.set(id, el);
+      elements.push(el);
+      return el;
+    };
+    /** Anything emphasis or a note can point at: a node or a chart data point. */
+    const ensureTarget = (id: string, frame: number): { box: Rect; shape: NodeShape; start: number; duration: number; color: Accent } | null => {
+      if (nodeById.has(id)) return ensureNode(id, frame);
+      const datum = ensureDatum(id, frame);
+      const box = geo.chart?.targets.get(id);
+      if (!datum || !box) return null;
+      return { box, shape: datum.kind === "bar" ? "box" : "circle", start: datum.start, duration: datum.duration, color: datum.color };
+    };
+
+    const addMark = (mark: MarkType, target: { box: Rect; shape: NodeShape; start: number; duration: number }, frame: number, key: string) => {
       const t = schedule(frame, MARK_SECONDS[mark], target.start + Math.round(target.duration * 0.7));
       if (!t) return;
       const el: MarkElement = {
@@ -612,6 +885,7 @@ export function buildRenderPlan(plan: ResolvedDiagramPlan, space: FreeSpace): Re
         target: target.box,
         targetShape: target.shape,
         ...t,
+        cue: cueOf(frame),
       };
       elements.push(el);
     };
@@ -619,9 +893,12 @@ export function buildRenderPlan(plan: ResolvedDiagramPlan, space: FreeSpace): Re
     const notePlaced: Rect[] = [];
     let titleDone = false;
     let dividerDone = !geo.divider;
+    let spineDone = !geo.spine;
 
     for (const op of scene.ops) {
       const f = op.frame;
+      // Rule the chart's axes in as the scene opens, so each bar/point can land right on its word.
+      if (geo.chart && axesEl === undefined) ensureAxes(f);
       if (!dividerDone && (op.type === "draw" || op.type === "connect") && geo.divider) {
         dividerDone = true;
         const t = schedule(f, MARK_SECONDS.divider);
@@ -634,6 +911,24 @@ export function buildRenderPlan(plan: ResolvedDiagramPlan, space: FreeSpace): Re
             mark: "divider",
             target: geo.divider,
             targetShape: "box",
+            ...t,
+          });
+        }
+      }
+
+      if (!spineDone && op.type === "draw" && geo.spine) {
+        spineDone = true;
+        const t = schedule(f, MARK_SECONDS.spine);
+        if (t) {
+          elements.push({
+            kind: "mark",
+            id: `${scene.id}:spine`,
+            seed: seedBase + 11,
+            color: MARK_COLOR.spine,
+            mark: "spine",
+            target: geo.spine.rect,
+            targetShape: "box",
+            ticks: geo.spine.ticks,
             ...t,
           });
         }
@@ -663,6 +958,7 @@ export function buildRenderPlan(plan: ResolvedDiagramPlan, space: FreeSpace): Re
             align: "center",
             blockWidth: geo.title.blockWidth,
             ...t,
+            cue: f,
           });
           break;
         }
@@ -693,16 +989,27 @@ export function buildRenderPlan(plan: ResolvedDiagramPlan, space: FreeSpace): Re
         case "note":
           if (op.text) addNote(op.text, op.target, f, op.id);
           break;
+        case "plot":
+          if (op.target) ensureDatum(op.target, f);
+          break;
+        case "sticker":
+          if (op.text) addSticker(op.text, op.target, f, op.id);
+          break;
         default: {
           if (!op.target) break;
-          const node = ensureNode(op.target, f);
-          if (node) addMark(op.type as MarkType, node, f, op.id);
+          const target = ensureTarget(op.target, f);
+          if (!target) break;
+          const mark = op.type as MarkType;
+          const text = geo.chart?.textTargets.get(op.target);
+          // On a chart, a marker stroke across a bar/slice reads as a smudge - mark its written label instead.
+          if (text && (mark === "highlight" || mark === "underline")) addMark(mark, { ...target, box: text, shape: "box" }, f, op.id);
+          else addMark(mark, target, f, op.id);
         }
       }
     }
 
     function addNote(text: string, targetId: string | undefined, frame: number, key: string) {
-      const targetNode = targetId ? ensureNode(targetId, frame) : null;
+      const targetNode = targetId ? ensureTarget(targetId, frame) : null;
       const placed = placeNote(text, targetNode?.box, [...geo.occupied, ...notePlaced], space.regions, ctx);
       if (!placed) return;
       notePlaced.push(placed.rect);
@@ -732,13 +1039,42 @@ export function buildRenderPlan(plan: ResolvedDiagramPlan, space: FreeSpace): Re
         blockWidth: placed.blockWidth,
         pointTo,
         ...t,
+        cue: cueOf(frame),
+      });
+    }
+
+    function addSticker(subject: string, targetId: string | undefined, frame: number, key: string) {
+      const asset = stickers[stickerKey(subject)];
+      if (!asset) return; // generation failed or was skipped - nothing to show
+      const target = targetId ? ensureTarget(targetId, frame) : null;
+      const rect = placeSticker(asset.width / Math.max(1, asset.height), target?.box, [...geo.occupied, ...notePlaced], space.regions, ctx);
+      if (!rect) return;
+      // Not pen-drawn, so it doesn't queue behind the pen - it lands right on its word.
+      const start = Math.max(frame - lead, sceneStart, target ? target.start + Math.round(target.duration * 0.5) : 0);
+      if (start >= lastDrawFrame) return;
+      const t = { start, duration: sec(STICKER_SECONDS) };
+      notePlaced.push(rect);
+      const seed = seedBase + hash(key);
+      elements.push({
+        kind: "sticker",
+        id: `${scene.id}:${key}`,
+        seed,
+        color: target?.color ?? "yellow",
+        box: rect,
+        src: asset.src,
+        tilt: ((seed % 1000) / 1000 - 0.5) * 16,
+        subject,
+        ...t,
+        cue: cueOf(frame),
       });
     }
 
     // Anything the model declared but never triggered still gets drawn, so a
     // lazy plan doesn't leave holes: nodes first, then their arrows.
+    autoFill = true;
     for (const node of scene.nodes) if (!nodeEls.has(node.id)) ensureNode(node.id, penFree + lead);
     for (const edge of scene.edges) if (!edgeEls.has(edge.id)) ensureEdge(edge.id, penFree + lead);
+    for (const d of scene.chart?.data ?? []) if (!chartEls.has(d.id)) ensureDatum(d.id, penFree + lead);
 
     if (elements.length === 0) return;
     elements.sort((a, b) => a.start - b.start);
@@ -754,5 +1090,6 @@ export function buildRenderPlan(plan: ResolvedDiagramPlan, space: FreeSpace): Re
     theme: space.theme,
     regions: space.regions,
     scenes: renderScenes,
+    dropped,
   };
 }

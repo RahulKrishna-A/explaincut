@@ -54,24 +54,24 @@ export interface DrawCtx {
   palette: Palette;
 }
 
-const clamp01 = (v: number) => Math.max(0, Math.min(1, v));
-const smooth = (v: number) => v * v * (3 - 2 * v);
-const safeId = (s: string) => s.replace(/[^a-zA-Z0-9_-]/g, "_");
+export const clamp01 = (v: number) => Math.max(0, Math.min(1, v));
+export const smooth = (v: number) => v * v * (3 - 2 * v);
+export const safeId = (s: string) => s.replace(/[^a-zA-Z0-9_-]/g, "_");
 
 /** Progress (0..1) of a phase, honouring an element whose duration was compressed by the scheduler. */
-function phaseProgress(local: number, duration: number, total: number, fps: number, phase: Phase | null): number {
+export function phaseProgress(local: number, duration: number, total: number, fps: number, phase: Phase | null): number {
   if (!phase) return 0;
   const scale = duration / Math.max(1, total * fps);
   const t = local / fps / scale;
   return clamp01((t - phase.start) / Math.max(1e-3, phase.end - phase.start));
 }
 
-function strokeWidth(ctx: DrawCtx): number {
+export function strokeWidth(ctx: DrawCtx): number {
   return Math.max(2, ctx.u * 0.58);
 }
 
 /** Wobble + boil a set of strokes. Wobble is seeded (stable); boil changes every few frames once drawn. */
-function liven(strokes: Stroke[], r: Rand, ctx: DrawCtx, seed: number, wobbleAmp: number, boilOn: boolean): Stroke[] {
+export function liven(strokes: Stroke[], r: Rand, ctx: DrawCtx, seed: number, wobbleAmp: number, boilOn: boolean): Stroke[] {
   return strokes.map((s, i) => {
     const w = wobble(densify(s, ctx.u * 1.2), wobbleAmp, r);
     return boilOn ? boil(w, ctx.frame, ctx.u * 0.12, seed + i * 31) : w;
@@ -82,7 +82,7 @@ function liven(strokes: Stroke[], r: Rand, ctx: DrawCtx, seed: number, wobbleAmp
 // Low-level drawing bits
 // ---------------------------------------------------------------------------
 
-const InkPath: React.FC<{
+export const InkPath: React.FC<{
   d: string;
   color: string;
   width: number;
@@ -117,7 +117,7 @@ const PenTip: React.FC<{ tip: Pt | null; color: string; ctx: DrawCtx }> = ({ tip
 };
 
 /** Draws strokes progressively with the pen tip, in one call. */
-const Sketch: React.FC<{
+export const Sketch: React.FC<{
   strokes: Stroke[];
   progress: number;
   color: string;
@@ -148,7 +148,7 @@ export const HandText: React.FC<{
   fontSize: number;
   x: number;
   y: number;
-  align: "left" | "center";
+  align: "left" | "center" | "right";
   blockWidth: number;
   color: string;
   progress: number;
@@ -168,7 +168,8 @@ export const HandText: React.FC<{
     lineProgress.push(clamp01((progress - consumed) / share));
     consumed += share;
   }
-  const leftOf = (i: number) => (align === "center" ? x + (blockWidth - widths[i]) / 2 : x);
+  const leftOf = (i: number) =>
+    align === "center" ? x + (blockWidth - widths[i]) / 2 : align === "right" ? x + blockWidth - widths[i] : x;
   const baselineOf = (i: number) => top + lh * i + fontSize * 0.78;
   const writing = lineProgress.findIndex((lp) => lp > 0 && lp < 1);
   const tip: Pt | null =
@@ -479,6 +480,15 @@ export const MarkView: React.FC<{ el: MarkElement; ctx: DrawCtx }> = ({ el, ctx 
       }
       break;
     }
+    case "spine": {
+      // The time arrow, then a marker dot for each event.
+      const a: Pt = [x, y];
+      const b: Pt = [x + w, y + h];
+      strokes = [handLine(a, b, r, 0.01), arrowHead(b, Math.atan2(b[1] - a[1], b[0] - a[0]), u * 2.4, r)];
+      for (const t of el.ticks ?? []) strokes.push(sketchEllipse(t.x, t.y, u * 1.1, u * 1.1, r, 1.05).strokes[0]);
+      width = sw * 1.05;
+      break;
+    }
     case "divider": {
       const a: Pt = [x, y];
       const b: Pt = [x + w, y + h];
@@ -493,7 +503,7 @@ export const MarkView: React.FC<{ el: MarkElement; ctx: DrawCtx }> = ({ el, ctx 
     <Sketch
       strokes={live}
       progress={progress}
-      color={el.mark === "divider" ? ctx.palette.ink : color}
+      color={el.mark === "divider" || el.mark === "spine" ? ctx.palette.ink : color}
       width={width}
       ctx={ctx}
       opacity={opacity}

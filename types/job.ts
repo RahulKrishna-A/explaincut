@@ -1,13 +1,16 @@
-import type { WonderIssue } from "@/lib/meta/wonder";
+import type { RenderOptions } from "./renderOptions";
+import type { SelfReview } from "./review";
 
 export type JobStage =
   | "uploaded"
   | "transcribing"
   | "planning"
+  | "illustrating"
   | "rendering_diagram"
   | "segmenting"
   | "compositing"
   | "reviewing"
+  | "correcting"
   | "done"
   | "error";
 
@@ -19,5 +22,6 @@ export interface JobStatus {
   createdAt: number;
   updatedAt: number;
   outputReady: boolean;
-  reviewIssues?: WonderIssue[];
+  options?: RenderOptions;
+  selfReview?: SelfReview;
 }

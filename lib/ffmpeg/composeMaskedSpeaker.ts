@@ -14,8 +14,18 @@ export async function composeDiagramBehindPerson(
   originalVideoPath: string,
   diagramLayerMovPath: string,
   maskVideoPath: string,
-  outputPath: string
+  outputPath: string,
+  captionLayerMovPath?: string
 ): Promise<void> {
+  const filters = [
+    "[1:v]alphaextract[diagA]",
+    "[2:v]format=gray,negate[invMask]",
+    "[diagA][invMask]blend=all_mode=multiply,format=gray[finalA]",
+    "[1:v][finalA]alphamerge[diagPunched]",
+  ];
+  // Captions go on last, over the speaker - they're never punched out.
+  if (captionLayerMovPath) filters.push("[0:v][diagPunched]overlay=format=auto[withDiag]", "[withDiag][3:v]overlay=format=auto[outv]");
+  else filters.push("[0:v][diagPunched]overlay=format=auto[outv]");
   await runFfmpeg([
     "-y",
     "-i",
@@ -24,14 +34,9 @@ export async function composeDiagramBehindPerson(
     diagramLayerMovPath,
     "-i",
     maskVideoPath,
+    ...(captionLayerMovPath ? ["-i", captionLayerMovPath] : []),
     "-filter_complex",
-    [
-      "[1:v]alphaextract[diagA]",
-      "[2:v]format=gray,negate[invMask]",
-      "[diagA][invMask]blend=all_mode=multiply,format=gray[finalA]",
-      "[1:v][finalA]alphamerge[diagPunched]",
-      "[0:v][diagPunched]overlay=format=auto[outv]",
-    ].join(";"),
+    filters.join(";"),
     "-map",
     "[outv]",
     "-map",
@@ -56,7 +61,8 @@ export async function composeDiagramBehindPerson(
 export async function composeDiagramOverlay(
   originalVideoPath: string,
   diagramLayerMovPath: string,
-  outputPath: string
+  outputPath: string,
+  captionLayerMovPath?: string
 ): Promise<void> {
   await runFfmpeg([
     "-y",
@@ -64,8 +70,11 @@ export async function composeDiagramOverlay(
     originalVideoPath,
     "-i",
     diagramLayerMovPath,
+    ...(captionLayerMovPath ? ["-i", captionLayerMovPath] : []),
     "-filter_complex",
-    "[0:v][1:v]overlay=format=auto[outv]",
+    captionLayerMovPath
+      ? "[0:v][1:v]overlay=format=auto[withDiag];[withDiag][2:v]overlay=format=auto[outv]"
+      : "[0:v][1:v]overlay=format=auto[outv]",
     "-map",
     "[outv]",
     "-map",

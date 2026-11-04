@@ -5,10 +5,14 @@
  *
  * Usage:
  *   npx tsx scripts/rerender.ts <jobId> [--plan path/to/plan.json] [--regions] [--layer-only]
+ *                                       [--captions | --no-captions] [--caption-font sans|rounded|serif|mono|hand] [--caption-size small|medium|large]
  *
- *   --plan        use this v2 plan instead of the job's diagram-plan.raw.json
- *   --regions     draw the detected free-space rectangles (debug)
- *   --layer-only  stop after rendering the transparent drawing layer
+ *   --plan          use this v2 plan instead of the job's diagram-plan.raw.json
+ *   --regions       draw the detected free-space rectangles (debug)
+ *   --layer-only    stop after rendering the transparent drawing layer
+ *   --captions      burn in captions; --no-captions  leave them out
+ *                   (otherwise the job's render-options.json, or the default: on)
+ *   --caption-font  caption typeface; --caption-size  caption size
  */
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -19,6 +23,9 @@ import { buildRenderPlan } from "../lib/layout/buildRenderPlan";
 import { validateAndResolveDiagramPlan } from "../lib/diagramPlan/validate";
 import { buildSmoothedMaskVideo, type MaskSample } from "../lib/ffmpeg/maskToAlpha";
 import { composeDiagramBehindPerson } from "../lib/ffmpeg/composeMaskedSpeaker";
+import { renderCaptionLayer } from "../lib/render/renderDiagramLayer";
+import { captionMetrics, reserveCaptionBand } from "../lib/captions/buildCaptions";
+import { parseRenderOptions } from "../lib/renderOptions";
 import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import type { Transcript } from "../types/transcript";
@@ -66,19 +73,29 @@ async function main() {
   }));
   const meta = await sharp(samples[0].framePath!).metadata();
 
+  const saved = await fs.readFile(path.join(dir, "render-options.json"), "utf-8").then(JSON.parse, () => ({}));
+  const options = parseRenderOptions(saved);
+  if (process.argv.includes("--captions")) options.captions.enabled = true;
+  if (process.argv.includes("--no-captions")) options.captions.enabled = false;
+  if (arg("--caption-font")) options.captions = parseRenderOptions({ captions: { ...options.captions, font: arg("--caption-font") } }).captions;
+  if (arg("--caption-size")) options.captions = parseRenderOptions({ captions: { ...options.captions, size: arg("--caption-size") } }).captions;
+
   console.time("free space");
-  const space = await analyzeFreeSpace(
+  let space = await analyzeFreeSpace(
     samples.map((s) => s.pngPath),
     samples.map((s) => s.framePath!),
     meta.width!,
     meta.height!
   );
   console.timeEnd("free space");
+  if (options.captions.enabled) space = reserveCaptionBand(space, captionMetrics(space.width, space.height, options.captions).bandTop);
   console.log("free space:", JSON.stringify(space));
 
   const { plan, issues } = validateAndResolveDiagramPlan(rawPlan, transcript);
   if (issues.length) console.warn("plan issues:", issues);
-  const renderPlan = buildRenderPlan(plan, space);
+  // Reuse the job's generated stickers (no API calls); a --plan with new sticker subjects just leaves those out.
+  const stickers = await fs.readFile(path.join(dir, "stickers.json"), "utf-8").then(JSON.parse, () => ({}));
+  const renderPlan = buildRenderPlan(plan, space, stickers);
   await fs.writeFile(path.join(dir, "render-plan.json"), JSON.stringify(renderPlan, null, 2));
   console.log(`scenes: ${renderPlan.scenes.map((s) => `${s.id}[${s.elements.length}]`).join(" ")}`);
 
@@ -88,9 +105,17 @@ async function main() {
   console.timeEnd("render layer");
   if (process.argv.includes("--layer-only")) return;
 
+  let captionLayer: string | undefined;
+  if (options.captions.enabled) {
+    captionLayer = path.join(dir, "caption-layer-v2.mov");
+    console.time("render captions");
+    await renderCaptionLayer(transcript, options.captions, { width: renderPlan.width, height: renderPlan.height, fps: renderPlan.fps }, captionLayer);
+    console.timeEnd("render captions");
+  }
+
   const maskVideo = await buildSmoothedMaskVideo(samples, dir, renderPlan.fps);
   const out = path.join(dir, "output-v2.mp4");
-  await composeDiagramBehindPerson(path.join(dir, "input.mp4"), layer, maskVideo, out);
+  await composeDiagramBehindPerson(path.join(dir, "input.mp4"), layer, maskVideo, out, captionLayer);
   console.log(`wrote ${out}`);
 }
 
