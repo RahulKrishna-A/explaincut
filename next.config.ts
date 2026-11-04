@@ -3,6 +3,9 @@ import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   /* config options here */
   cacheComponents: true,
+  // Ship only the files the server actually needs - keeps the deploy bundle
+  // under Amplify's 220 MB build-output limit.
+  output: "standalone",
   partialPrefetching: true,
   // Native/binary Node packages used directly by API routes - Turbopack can't
   // statically bundle their non-JS assets (native binaries), so they must
