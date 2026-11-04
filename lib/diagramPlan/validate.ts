@@ -208,9 +208,78 @@ export function validateAndResolveDiagramPlan(rawPlan: unknown, transcript: Tran
 
   // Scenes play in the order they start.
   scenes.sort((a, b) => (a.ops[0]?.frame ?? Infinity) - (b.ops[0]?.frame ?? Infinity));
+  const playable = scenes.filter((s) => s.ops.length > 0);
+  pickBoards(playable, durationSeconds, fps, issues);
 
   return {
-    plan: { version: "2.0", fps, durationSeconds, scenes: scenes.filter((s) => s.ops.length > 0) },
+    plan: { version: "2.0", fps, durationSeconds, scenes: playable },
     issues,
   };
+}
+
+/** A board needs time on screen to be worth cutting away from the speaker. */
+const MIN_BOARD_SECONDS = 4.5;
+/** Clips this short get one board at most; longer ones up to two. */
+const TWO_BOARDS_FROM_SECONDS = 45;
+/** Below this, cutting away from the speaker at all feels jumpy. */
+const MIN_CLIP_FOR_BOARD_SECONDS = 15;
+
+/** How much there is to explain in a scene - the busiest one earns the full screen. */
+function complexity(scene: ResolvedDiagramScene): number {
+  return scene.nodes.length + scene.edges.length * 0.75 + (scene.chart?.data.length ?? 0) * 0.8 + (scene.layout === "chart" ? 0 : 0.5);
+}
+
+/**
+ * Full-screen black "board" scenes are the exception, not the rhythm: keep one
+ * or two per clip, only where there's time to explain, and if the planner chose
+ * none, give the most complex explanation the full screen anyway.
+ */
+function pickBoards(scenes: ResolvedDiagramScene[], durationSeconds: number, fps: number, issues: ValidationIssue[]): void {
+  const span = (i: number) => {
+    const start = scenes[i].ops[0]?.frame ?? 0;
+    const end = i + 1 < scenes.length ? (scenes[i + 1].ops[0]?.frame ?? start) : Math.round(durationSeconds * fps);
+    return (end - start) / fps;
+  };
+  const isLast = (i: number) => i === scenes.length - 1;
+
+  if (durationSeconds < MIN_CLIP_FOR_BOARD_SECONDS || scenes.length < 2) {
+    for (const s of scenes) if (s.canvas === "board") s.canvas = undefined;
+    return;
+  }
+
+  // Too short to read on a full screen - stays with the speaker.
+  scenes.forEach((s, i) => {
+    if (s.canvas === "board" && span(i) < MIN_BOARD_SECONDS) {
+      issues.push({ opId: s.id, reason: `board scene only ${span(i).toFixed(1)}s long - kept on the speaker` });
+      s.canvas = undefined;
+    }
+  });
+
+  const max = durationSeconds >= TWO_BOARDS_FROM_SECONDS ? 2 : 1;
+  const boards = scenes.map((s, i) => ({ s, i })).filter(({ s }) => s.canvas === "board");
+  if (boards.length > max) {
+    const keep = new Set(
+      [...boards]
+        .sort((a, b) => complexity(b.s) - complexity(a.s))
+        .slice(0, max)
+        .map(({ s }) => s.id)
+    );
+    for (const { s } of boards) {
+      if (keep.has(s.id)) continue;
+      issues.push({ opId: s.id, reason: `more than ${max} board scene(s) - kept on the speaker` });
+      s.canvas = undefined;
+    }
+  }
+
+  if (boards.length === 0) {
+    // Prefer not to end the clip on black: the last scene is the fallback only.
+    const candidates = scenes
+      .map((s, i) => ({ s, i }))
+      .filter(({ s, i }) => span(i) >= MIN_BOARD_SECONDS + 1 && (s.nodes.length >= 4 || (s.chart?.data.length ?? 0) >= 4))
+      .sort((a, b) => Number(isLast(a.i)) - Number(isLast(b.i)) || complexity(b.s) - complexity(a.s));
+    if (candidates[0]) {
+      candidates[0].s.canvas = "board";
+      issues.push({ opId: candidates[0].s.id, reason: "no board scene planned - giving the most complex explanation the full screen" });
+    }
+  }
 }

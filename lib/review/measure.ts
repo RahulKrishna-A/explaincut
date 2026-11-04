@@ -188,6 +188,8 @@ export function measureOverlap(plan: RenderPlan, masks: LoadedMask[]): MeasuredF
   const { fps } = plan;
   const out: MeasuredFinding[] = [];
   for (const scene of plan.scenes) {
+    // On the black board the speaker is faded out - nothing can be hidden behind them.
+    if (scene.board) continue;
     const until = lastVisibleFrame(scene, fps) / fps;
     for (const el of scene.elements) {
       const box = elementBounds(el);

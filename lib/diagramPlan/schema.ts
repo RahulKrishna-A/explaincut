@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { TONES } from "@/lib/style/tone";
-import { ACCENTS, CHART_TYPES, ICON_NAMES, NODE_SHAPES, OP_TYPES, SCENE_LAYOUTS } from "@/types/diagramPlan";
+import { ACCENTS, CHART_TYPES, ICON_NAMES, NODE_SHAPES, OP_TYPES, SCENE_CANVASES, SCENE_LAYOUTS } from "@/types/diagramPlan";
 
 // The model occasionally invents a shape/icon/colour name. Rather than failing
 // the whole plan, unknown cosmetic values are silently dropped (.catch).
@@ -79,6 +79,7 @@ export const diagramSceneSchema = z.object({
   ops: z.array(diagramOpSchema).default([]),
   chart: chartSpecSchema.optional().catch(undefined),
   tone: z.enum(TONES).optional().catch(undefined),
+  canvas: z.enum(SCENE_CANVASES).optional().catch(undefined),
 });
 
 export const diagramPlanSchema = z.object({

@@ -5,7 +5,7 @@
  *
  * Usage:
  *   npx tsx scripts/rerender.ts <jobId> [--plan path/to/plan.json] [--regions] [--layer-only]
- *                                       [--style classic|journal] [--captions | --no-captions] [--caption-font sans|rounded|serif|mono|hand] [--caption-size small|medium|large]
+ *                                       [--captions | --no-captions] [--caption-font sans|rounded|serif|mono|hand] [--caption-size small|medium|large]
  *
  *   --plan          use this v2 plan instead of the job's diagram-plan.raw.json
  *   --regions       draw the detected free-space rectangles (debug)
@@ -20,10 +20,9 @@ import sharp from "sharp";
 import { jobDir } from "../lib/paths";
 import { analyzeFreeSpace } from "../lib/layout/freeSpace";
 import { buildRenderPlan } from "../lib/layout/buildRenderPlan";
+import { boardRect, boardSecondWindows } from "../lib/layout/board";
 import { validateAndResolveDiagramPlan } from "../lib/diagramPlan/validate";
 import { buildSmoothedMaskVideo, type MaskSample } from "../lib/ffmpeg/maskToAlpha";
-import { computeHeadTops } from "../lib/layout/headTops";
-import { reserveKeywordBand } from "../lib/layout/buildKeywords";
 import { composeDiagramBehindPerson } from "../lib/ffmpeg/composeMaskedSpeaker";
 import { renderCaptionLayer, renderTransparentLayer } from "../lib/render/renderDiagramLayer";
 import { captionMetrics, reserveCaptionBand } from "../lib/captions/buildCaptions";
@@ -61,7 +60,6 @@ async function main() {
 
   const saved = await fs.readFile(path.join(dir, "render-options.json"), "utf-8").then(JSON.parse, () => ({}));
   const options = parseRenderOptions(saved);
-  if (arg("--style")) options.style = parseRenderOptions({ style: arg("--style") }).style;
   if (process.argv.includes("--captions")) options.captions.enabled = true;
   if (process.argv.includes("--no-captions")) options.captions.enabled = false;
   if (arg("--caption-font")) options.captions = parseRenderOptions({ captions: { ...options.captions, font: arg("--caption-font") } }).captions;
@@ -75,23 +73,20 @@ async function main() {
     meta.height!
   );
   console.timeEnd("free space");
-  if (options.captions.enabled) space = reserveCaptionBand(space, captionMetrics(space.width, space.height, options.captions, options.style).bandTop);
-  if (options.style === "hormozi") {
-    const tops = await computeHeadTops(samples.map((m) => m.pngPath), space.width, space.height);
-    space = reserveKeywordBand({ ...space, headTops: { intervalSeconds: samples[0].intervalSeconds, y: tops } });
-    console.log("head tops:", tops.map((y) => Math.round(y)).join(" "));
-  }
+  const captionTop = options.captions.enabled ? captionMetrics(space.width, space.height, options.captions).bandTop : undefined;
+  if (captionTop !== undefined) space = reserveCaptionBand(space, captionTop);
+  space = { ...space, board: boardRect(space.width, space.height, captionTop) };
   console.log("free space:", JSON.stringify(space));
 
   const { plan, issues } = validateAndResolveDiagramPlan(rawPlan, transcript);
   if (issues.length) console.warn("plan issues:", issues);
   // Reuse the job's generated stickers (no API calls); a --plan with new sticker subjects just leaves those out.
   const stickers = await fs.readFile(path.join(dir, "stickers.json"), "utf-8").then(JSON.parse, () => ({}));
-  const renderPlan = buildRenderPlan(plan, space, stickers, options.style);
+  const renderPlan = buildRenderPlan(plan, space, stickers);
   await fs.writeFile(path.join(dir, "render-plan.json"), JSON.stringify(renderPlan, null, 2));
-  console.log(`scenes: ${renderPlan.scenes.map((s) => `${s.id}[${s.elements.length}]`).join(" ")}`);
+  console.log(`scenes: ${renderPlan.scenes.map((s) => `${s.id}${s.board ? "(board)" : ""}[${s.elements.length}]`).join(" ")}`);
 
-  const tag = options.style === "classic" ? "v2" : options.style;
+  const tag = "v2";
   const layer = path.join(dir, `diagram-layer-${tag}.mov`);
   console.time("render layer");
   await renderLayer(renderPlan, layer, process.argv.includes("--regions"));
@@ -102,13 +97,13 @@ async function main() {
   if (options.captions.enabled) {
     captionLayer = path.join(dir, "caption-layer-v2.mov");
     console.time("render captions");
-    await renderCaptionLayer(transcript, options.captions, { width: renderPlan.width, height: renderPlan.height, fps: renderPlan.fps }, captionLayer, options.style);
+    await renderCaptionLayer(transcript, options.captions, { width: renderPlan.width, height: renderPlan.height, fps: renderPlan.fps }, captionLayer);
     console.timeEnd("render captions");
   }
 
   const maskVideo = await buildSmoothedMaskVideo(samples, dir, renderPlan.fps);
   const out = path.join(dir, `output-${tag}.mp4`);
-  await composeDiagramBehindPerson(path.join(dir, "input.mp4"), layer, maskVideo, out, captionLayer, options.style === "hormozi" ? { width: renderPlan.width, height: renderPlan.height } : undefined);
+  await composeDiagramBehindPerson(path.join(dir, "input.mp4"), layer, maskVideo, out, captionLayer, boardSecondWindows(renderPlan));
   console.log(`wrote ${out}`);
 }
 

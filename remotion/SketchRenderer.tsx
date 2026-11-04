@@ -3,11 +3,10 @@ import { interpolate, useCurrentFrame } from "remotion";
 import type { EdgeElement, RenderPlan, RenderScene } from "@/types/diagramPlan";
 import { EdgeView, MarkView, NodeView, PacketView, TextView, type DrawCtx } from "./sketch/elements";
 import { AxesView, BarView, PointView, SliceView } from "./sketch/charts";
-import { HORMOZI_PALETTES, JOURNAL_PALETTES, PALETTES } from "./sketch/theme";
-import { KeywordView } from "./sketch/keywords";
-import { SweepView } from "./sketch/sweeps";
+import { PALETTES } from "./sketch/theme";
 import { StickerView, usePreloadStickers } from "./sketch/sticker";
 import { toneProfile } from "@/lib/style/tone";
+import { boardFrameWindows, boardOpacity } from "@/lib/layout/board";
 
 const ERASE_SECONDS = 0.45;
 /** Paint order inside a scene: arrows tuck under boxes, emphasis and notes sit on top. */
@@ -64,8 +63,11 @@ export const SketchRenderer: React.FC<{ plan: RenderPlan; showRegions?: boolean 
   const frame = useCurrentFrame();
   const { width, height, fps } = plan;
   const u = Math.min(width, height) / 100;
-  const palette = (plan.style === "journal" ? JOURNAL_PALETTES : plan.style === "hormozi" ? HORMOZI_PALETTES : PALETTES)[plan.theme] ?? PALETTES.ink;
-  const ctx: DrawCtx = { frame, fps, width, height, u, palette, journal: plan.style === "journal" };
+  const palette = PALETTES[plan.theme] ?? PALETTES.ink;
+  const ctx: DrawCtx = { frame, fps, width, height, u, palette };
+  // On the black board the ink is always light, whatever the speaker's wall looked like.
+  const boardCtx: DrawCtx = { ...ctx, palette: PALETTES.chalk };
+  const backdrop = boardOpacity(boardFrameWindows(plan), frame, fps);
   usePreloadStickers([...new Set(plan.scenes.flatMap((s) => s.elements.flatMap((el) => (el.kind === "sticker" ? [el.src] : []))))]);
 
   return (
@@ -74,28 +76,30 @@ export const SketchRenderer: React.FC<{ plan: RenderPlan; showRegions?: boolean 
         <filter id="sketch-shadow" x="-10%" y="-10%" width="120%" height="120%">
           <feDropShadow dx={0} dy={u * 0.3} stdDeviation={u * 0.45} floodColor="#000" floodOpacity={palette.shadowOpacity} />
         </filter>
+        <filter id="board-shadow" x="-10%" y="-10%" width="120%" height="120%">
+          <feDropShadow dx={0} dy={u * 0.3} stdDeviation={u * 0.45} floodColor="#000" floodOpacity={boardCtx.palette.shadowOpacity} />
+        </filter>
       </defs>
       {showRegions
         ? plan.regions.map((r, i) => (
             <rect key={i} x={r.x} y={r.y} width={r.w} height={r.h} fill="rgba(0,200,255,0.08)" stroke="#00c8ff" strokeDasharray="8 6" strokeWidth={2} />
           ))
         : null}
-      {/* Keywords sit furthest back, so drawings overlay them. */}
-      <g>
-        {(plan.keywords ?? []).map((k) => (
-          <KeywordView key={k.id} el={k} ctx={ctx} />
-        ))}
-      </g>
-      {/* Sweeps run under the scene drawing; the mask later hides them wherever the speaker is. */}
-      <g>
-        {(plan.sweeps ?? []).map((sw) => (
-          <SweepView key={sw.id} el={sw} ctx={ctx} />
-        ))}
-      </g>
       <g filter="url(#sketch-shadow)">
-        {plan.scenes.map((scene) => (
-          <SceneLayer key={scene.id} scene={scene} ctx={ctx} />
-        ))}
+        {plan.scenes
+          .filter((scene) => !scene.board)
+          .map((scene) => (
+            <SceneLayer key={scene.id} scene={scene} ctx={ctx} />
+          ))}
+      </g>
+      {/* The black board: the speaker scene dissolves under it, the board scene draws on top. */}
+      {backdrop > 0 ? <rect x={0} y={0} width={width} height={height} fill="#000" opacity={backdrop} /> : null}
+      <g filter="url(#board-shadow)">
+        {plan.scenes
+          .filter((scene) => scene.board)
+          .map((scene) => (
+            <SceneLayer key={scene.id} scene={scene} ctx={boardCtx} />
+          ))}
       </g>
     </svg>
   );

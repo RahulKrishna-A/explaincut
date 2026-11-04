@@ -125,7 +125,16 @@ export interface DiagramScene {
   chart?: ChartSpec;
   /** The speaker's tone in this scene - picks sticker style, material, entrance and motion energy. */
   tone?: Tone;
+  /**
+   * Where the scene is drawn. "speaker" (default) = in the free space around the person.
+   * "board" = the speaker fades out to a full-screen black canvas and the drawing takes the
+   * whole frame - for the one or two most complex explanations in a clip.
+   */
+  canvas?: SceneCanvas;
 }
+
+export const SCENE_CANVASES = ["speaker", "board"] as const;
+export type SceneCanvas = (typeof SCENE_CANVASES)[number];
 
 /** Raw output from Muse Spark - not yet validated or resolved to frames. */
 export interface DiagramPlan {
@@ -173,10 +182,10 @@ export interface FreeSpace {
   regions: FreeRegion[];
   /** Union bounding box of the speaker across the clip, if known. */
   person?: Rect;
-  /** Top edge (y, px) of the speaker at each mask sample - lets text sit just above their head. */
-  headTops?: { intervalSeconds: number; y: number[] };
   /** "ink" = dark marker on a light background, "chalk" = light strokes on a dark one. */
   theme: SketchTheme;
+  /** Drawable area of a full-screen "board" scene (the whole frame minus margins and the caption band). */
+  board?: Rect;
 }
 
 // ---------------------------------------------------------------------------
@@ -328,46 +337,6 @@ export interface StickerElement extends ElementBase {
 /** Generated sticker images, keyed by stickerKey(subject). */
 export type StickerAssets = Record<string, { src: string; width: number; height: number }>;
 
-/**
- * A big gesture that travels across the whole frame - a marker scribble, an
- * eraser wipe or a highlighter swipe. It is drawn on the same layer as
- * everything else, so wherever it crosses the speaker the mask punches it out:
- * it disappears behind them and comes back out on the other side.
- */
-export interface SweepElement {
-  id: string;
-  kind: "sweep";
-  variant: "scribble" | "eraser" | "highlighter";
-  /** Frame the tool enters. */
-  start: number;
-  /** Frames it takes to cross. */
-  duration: number;
-  seed: number;
-  color: Accent;
-  /** Centre line of the path, left to right in travel order (already reversed for right-to-left sweeps). */
-  path: { x: number; y: number }[];
-  /** Brush thickness in px. */
-  thickness: number;
-}
-
-/**
- * The word being said, set huge BEHIND the speaker's head (Hormozi style). It sits
- * just above their head so only the bottom of the letters tuck behind them - the
- * depth that makes it read as part of the scene, and it's always a word they say.
- */
-export interface KeywordElement {
-  id: string;
-  kind: "keyword";
-  text: string;
-  start: number;
-  duration: number;
-  seed: number;
-  /** Centre of the text block. */
-  cx: number;
-  cy: number;
-  fontSize: number;
-}
-
 export type RenderElement =
   | NodeElement
   | EdgeElement
@@ -388,18 +357,15 @@ export interface RenderScene {
   /** Frame the scene is fully erased by (Infinity-like for the last scene: durationInFrames). */
   end: number;
   elements: RenderElement[];
+  /**
+   * Full-screen black board scene: the backdrop starts fading in at `in` (so it's fully black
+   * by the first stroke) and has faded back out to the speaker by `out` (= end).
+   */
+  board?: { in: number; out: number };
 }
-
-export type RenderStyle = "classic" | "journal" | "hormozi";
 
 export interface RenderPlan {
   version: "2.0";
-  /** Look of the drawing layer. Absent = "classic". */
-  style?: RenderStyle;
-  /** Cross-frame gestures that pass behind the speaker (journal style). */
-  sweeps?: SweepElement[];
-  /** Words set big behind the speaker (hormozi style). */
-  keywords?: KeywordElement[];
   fps: number;
   durationSeconds: number;
   width: number;

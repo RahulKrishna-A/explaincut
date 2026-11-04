@@ -53,8 +53,6 @@ export interface DrawCtx {
   /** 1% of the frame's short side. */
   u: number;
   palette: Palette;
-  /** Journal style: scrapbook details (tape, paper tones). */
-  journal?: boolean;
   /** Motion energy of the current scene, from the speaker's tone (1 = neutral). */
   energy?: number;
 }

@@ -5,7 +5,7 @@
  * drawings out of that band) and the Remotion caption layer.
  */
 import { CAPTION_SIZE_SCALE, type CaptionFont, type CaptionSettings } from "@/types/renderOptions";
-import type { FreeSpace, RenderStyle } from "@/types/diagramPlan";
+import type { FreeSpace } from "@/types/diagramPlan";
 import type { TranscriptWord } from "@/types/transcript";
 
 export interface CaptionWord {
@@ -42,25 +42,9 @@ const PAUSE_BREAK_SECONDS = 0.65;
 const MAX_WORDS = 7;
 const LINGER_SECONDS = 0.6;
 
-export function captionMetrics(width: number, height: number, settings: CaptionSettings, style: RenderStyle = "classic"): CaptionMetrics {
+export function captionMetrics(width: number, height: number, settings: CaptionSettings): CaptionMetrics {
   const u = Math.min(width, height) / 100;
   const portrait = height > width;
-  if (style === "hormozi") {
-    // Big heavy caps, 2-3 words at a time, sitting in the lower third (above the reel UI), no box.
-    const fontSize = Math.round((portrait ? u * 8.6 : u * 6.8) * CAPTION_SIZE_SCALE[settings.size]);
-    const lineHeight = Math.round(fontSize * 1.08);
-    const bottomMargin = Math.round(height * (portrait ? 0.2 : 0.12));
-    return {
-      fontSize,
-      lineHeight,
-      padX: 0,
-      padY: 0,
-      maxTextWidth: Math.round(width * 0.9),
-      maxLines: 2,
-      bottomMargin,
-      bandTop: height - bottomMargin - 2 * lineHeight,
-    };
-  }
   const fontSize = Math.round((portrait ? u * 6.2 : u * 5.4) * CAPTION_SIZE_SCALE[settings.size] * (settings.font === "hand" ? 1.18 : 1));
   const lineHeight = Math.round(fontSize * 1.22);
   const padX = Math.round(fontSize * 0.6);
@@ -127,36 +111,6 @@ export function buildCaptionPages(words: TranscriptWord[], metrics: CaptionMetri
   for (let i = 0; i < pages.length; i++) {
     const next = pages[i + 1];
     pages[i].end = next ? Math.min(next.start, pages[i].end + LINGER_SECONDS) : pages[i].end + LINGER_SECONDS;
-  }
-  return pages;
-}
-
-/** Hormozi captions: punchy 1-3 word chunks, breaking on pauses and punctuation. */
-export function buildHormoziPages(words: TranscriptWord[], metrics: CaptionMetrics): CaptionPage[] {
-  const pages: CaptionPage[] = [];
-  let current: CaptionWord[] = [];
-  const flush = () => {
-    if (current.length) pages.push({ start: current[0].start, end: current[current.length - 1].end, words: current });
-    current = [];
-  };
-  const widthOf = (ws: string[]) => ws.join(" ").length * 0.82 * metrics.fontSize;
-  for (const w of words) {
-    const text = w.word.trim();
-    if (!text) continue;
-    const word: CaptionWord = { text, start: w.startSeconds, end: Math.max(w.endSeconds, w.startSeconds + 0.05) };
-    if (current.length) {
-      const last = current[current.length - 1];
-      const pause = word.start - last.end > 0.45;
-      const punct = /[.?!,;:]$/.test(last.text);
-      const full = current.length >= 3 || widthOf([...current.map((c) => c.text), text]) > metrics.maxTextWidth * 1.7;
-      if (pause || punct || full) flush();
-    }
-    current.push(word);
-  }
-  flush();
-  for (let i = 0; i < pages.length; i++) {
-    const next = pages[i + 1];
-    pages[i].end = next ? Math.min(next.start, pages[i].end + 0.35) : pages[i].end + 0.5;
   }
   return pages;
 }

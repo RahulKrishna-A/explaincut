@@ -33,8 +33,11 @@ import {
 } from "./measure";
 
 const MAX_FRAMES = 16;
-/** Spark drafts per fix: a redraft is requested while serious measured problems remain. */
-const MAX_DRAFTS = 3;
+/**
+ * Spark drafts per fix (SPARK_FIX_DRAFTS, default 1). Above 1, a redraft is
+ * requested while serious measured problems remain - each one adds ~1-2 min.
+ */
+const MAX_DRAFTS = Math.max(1, Math.min(5, Math.floor(Number(process.env.SPARK_FIX_DRAFTS) || 1)));
 const ERASE_SECONDS = 0.45;
 
 export interface SelfReviewDeps {

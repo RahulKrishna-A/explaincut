@@ -142,6 +142,7 @@ export default function Home() {
   const [jobId, setJobId] = useState<string | null>(null);
   const [job, setJob] = useState<JobStatus | null>(null);
   const [busy, setBusy] = useState(false);
+  const [started, setStarted] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
   const [elapsed, setElapsed] = useState(0);
@@ -224,6 +225,7 @@ export default function Home() {
 
   const handleGenerate = useCallback(
     async (chosen: File) => {
+      setStarted(true);
       setBusy(true);
       setErrorMessage(null);
       setJob(null);
@@ -257,7 +259,7 @@ export default function Home() {
     [pollStatus, options]
   );
 
-  // Picking a clip starts the job right away, as the design's upload screen has no separate Generate step.
+  // Picking a clip only stages it; the job starts when the user presses Start.
   const choose = useCallback(
     (f: File | null | undefined) => {
       if (!f || busy) return;
@@ -265,11 +267,11 @@ export default function Home() {
         setErrorMessage("Please choose a video file.");
         return;
       }
+      setErrorMessage(null);
       setFile(f);
       setPreview(f);
-      void handleGenerate(f);
     },
-    [busy, handleGenerate, setPreview]
+    [busy, setPreview]
   );
 
   const startOver = useCallback(() => {
@@ -279,6 +281,7 @@ export default function Home() {
     setJob(null);
     setJobId(null);
     setBusy(false);
+    setStarted(false);
     setErrorMessage(null);
     setOutputMeta(null);
     setVariant("after");
@@ -287,7 +290,7 @@ export default function Home() {
     if (inputRef.current) inputRef.current.value = "";
   }, [stopPolling, setPreview]);
 
-  const failed = job?.stage === "error" || (!!errorMessage && !!file);
+  const failed = job?.stage === "error" || (!!errorMessage && started);
   // The result screen opens as soon as the first cut exists; the self-review keeps running on it.
   const done = !!jobId && !!job?.outputReady && job.stage !== "error";
   const reviewRunning = done && (job?.stage === "reviewing" || job?.stage === "correcting");
@@ -342,76 +345,105 @@ export default function Home() {
       <Header phase={phase} />
 
       {phase === "upload" ? (
-        <main className="ec-main" style={{ gap: 28 }}>
-          <div className="ec-hero">
-            <h1>Upload your explanation</h1>
-            <p>We’ll draw the diagram behind you, in sync with your words.</p>
-          </div>
-
-          <div className="ec-card" style={{ maxWidth: 720 }}>
-            <div
-              className="ec-drop"
-              data-over={dragOver}
-              onDragOver={(e) => {
-                e.preventDefault();
-                setDragOver(true);
-              }}
-              onDragLeave={() => setDragOver(false)}
-              onDrop={(e) => {
-                e.preventDefault();
-                setDragOver(false);
-                choose(e.dataTransfer.files?.[0]);
-              }}
-            >
-              <span className="ec-drop-icon">
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="oklch(0.5 0.16 45)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M12 15V3" />
-                  <path d="m7 8 5-5 5 5" />
-                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                </svg>
-              </span>
-              <span style={{ fontWeight: 600, fontSize: 20 }}>Drop a talking-head video</span>
-              <span style={{ fontSize: 14, color: "var(--muted-2)" }}>
-                Webcam framing and a plain background work best.
-              </span>
-              <input
-                ref={inputRef}
-                type="file"
-                accept="video/*"
-                hidden
-                onChange={(e) => choose(e.target.files?.[0])}
-              />
-              <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
-                <button className="ec-btn ec-btn-dark" onClick={() => inputRef.current?.click()}>
-                  Choose file
-                </button>
-              </div>
-              {errorMessage ? (
-                <p style={{ color: "var(--danger)", fontSize: 14, margin: "8px 0 0" }}>{errorMessage}</p>
-              ) : null}
+        <main className="ec-main ec-main-bento">
+          <div className="ec-bento">
+            <div className="ec-bento-hero">
+              <h1>Upload your explanation</h1>
+              <p>We’ll draw the diagram behind you, in sync with your words.</p>
             </div>
-          </div>
 
-          <CaptionSettingsPanel
-            value={options.captions}
-            onChange={(captions) => saveOptions({ ...options, captions })}
-            disabled={busy}
-          />
+            <div className="ec-card ec-bento-drop">
+              <div
+                className="ec-drop"
+                data-over={dragOver}
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  setDragOver(true);
+                }}
+                onDragLeave={() => setDragOver(false)}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  setDragOver(false);
+                  choose(e.dataTransfer.files?.[0]);
+                }}
+              >
+                <input
+                  ref={inputRef}
+                  type="file"
+                  accept="video/*"
+                  hidden
+                  onChange={(e) => {
+                    choose(e.target.files?.[0]);
+                    e.target.value = "";
+                  }}
+                />
+                {file && previewUrl ? (
+                  <>
+                    <video className="ec-drop-preview" src={previewUrl} muted controls preload="metadata" />
+                    <div style={{ fontWeight: 600, fontSize: 16, maxWidth: "100%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      {file.name}
+                    </div>
+                    <div style={{ fontSize: 13, color: "var(--muted-2)" }}>{formatBytes(file.size)}</div>
+                    <div style={{ display: "flex", gap: 8, marginTop: 6, flexWrap: "wrap", justifyContent: "center" }}>
+                      <button className="ec-btn ec-btn-accent" onClick={() => void handleGenerate(file)}>
+                        Start
+                      </button>
+                      <button className="ec-btn ec-btn-ghost" onClick={() => inputRef.current?.click()}>
+                        Change file
+                      </button>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <span className="ec-drop-icon">
+                      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="oklch(0.5 0.16 45)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M12 15V3" />
+                        <path d="m7 8 5-5 5 5" />
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                      </svg>
+                    </span>
+                    <span style={{ fontWeight: 600, fontSize: 20 }}>Drop a talking-head video</span>
+                    <span style={{ fontSize: 14, color: "var(--muted-2)" }}>
+                      Webcam framing and a plain background work best.
+                    </span>
+                    <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+                      <button className="ec-btn ec-btn-dark" onClick={() => inputRef.current?.click()}>
+                        Choose file
+                      </button>
+                    </div>
+                  </>
+                )}
+                {errorMessage ? (
+                  <p style={{ color: "var(--danger)", fontSize: 14, margin: "8px 0 0" }}>{errorMessage}</p>
+                ) : null}
+              </div>
+            </div>
 
-          <SelfReviewToggle
-            enabled={options.selfReview.enabled}
-            onChange={(enabled) => saveOptions({ ...options, selfReview: { enabled } })}
-            disabled={busy}
-          />
+            <div className="ec-bento-captions">
+              <CaptionSettingsPanel
+                value={options.captions}
+                onChange={(captions) => saveOptions({ ...options, captions })}
+                disabled={busy}
+              />
+            </div>
 
-          <div className="ec-pipeline">
-            {PIPELINE.map((p, i) => (
-              <span key={p.stage} className="ec-chip">
-                <span className="ec-chip-n">{i + 1}</span>
-                <span style={{ fontWeight: 600 }}>{p.name}</span>
-                <span style={{ color: "var(--muted-2)" }}>{p.model}</span>
-              </span>
-            ))}
+            <div className="ec-bento-review">
+              <SelfReviewToggle
+                enabled={options.selfReview.enabled}
+                onChange={(enabled) => saveOptions({ ...options, selfReview: { enabled } })}
+                disabled={busy}
+              />
+            </div>
+
+            <div className="ec-pipeline ec-bento-pipeline">
+              {PIPELINE.map((p, i) => (
+                <span key={p.stage} className="ec-chip">
+                  <span className="ec-chip-n">{i + 1}</span>
+                  <span style={{ fontWeight: 600 }}>{p.name}</span>
+                  <span style={{ color: "var(--muted-2)" }}>{p.model}</span>
+                </span>
+              ))}
+            </div>
           </div>
         </main>
       ) : null}
