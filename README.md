@@ -1,3 +1,5 @@
+<img src="public/logo.svg" width="72" height="72" alt="ExplainCut logo">
+
 # ExplainCut
 
 Diagrams that build themselves in sync with your words. Upload a talking-head

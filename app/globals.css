@@ -92,10 +92,8 @@ input:focus-visible + label,
   width: 200px;
 }
 .ec-brand-mark {
-  width: 22px;
-  height: 22px;
-  border-radius: 4px;
-  background: linear-gradient(135deg, oklch(0.62 0.16 45), oklch(0.7 0.16 45));
+  flex: none;
+  display: block;
 }
 .ec-steps {
   margin: 0 auto;

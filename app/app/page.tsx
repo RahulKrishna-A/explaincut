@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import type { JobStage, JobStatus } from "@/types/job";
 import { CAPTION_FONT_LABELS, DEFAULT_RENDER_OPTIONS, type RenderOptions } from "@/types/renderOptions";
+import { LogoMark } from "../LogoMark";
 import { CaptionSettingsPanel } from "./CaptionSettingsPanel";
 import { Waiting } from "./Waiting";
 import { ReviewLive, ReviewReport, SelfReviewToggle, reviewSummary } from "./SelfReview";
@@ -115,7 +116,7 @@ function Header({ phase }: { phase: Phase }) {
   return (
     <header className="ec-header">
       <Link href="/" className="ec-brand" style={{ color: "inherit", textDecoration: "none" }}>
-        <span className="ec-brand-mark" />
+        <LogoMark size={24} className="ec-brand-mark" />
         ExplainCut
       </Link>
       <nav className="ec-steps" aria-label="Progress">
@@ -322,7 +323,7 @@ export default function Home() {
     if (!notify || notifiedRef.current) return;
     notifiedRef.current = true;
     if (typeof Notification !== "undefined" && Notification.permission === "granted" && document.hidden) {
-      new Notification("Your ExplainCut is ready", { body: file?.name ?? "Your cut is ready to watch." });
+      new Notification("Your ExplainCut is ready", { body: file?.name ?? "Your cut is ready to watch.", icon: "/icon-192.png" });
     }
   }, [done, notify, file]);
 

@@ -13,7 +13,7 @@
 .lp-nav { position: sticky; top: 0; z-index: 10; padding: 14px 20px; }
 .lp-nav-in { max-width: 1120px; margin: 0 auto; display: flex; align-items: center; gap: 8px; padding: 8px 8px 8px 18px; background: rgba(255,255,255,.8); backdrop-filter: blur(14px); border: 1px solid var(--line); border-radius: 6px; box-shadow: 0 4px 20px -8px rgba(40,28,18,.12); }
 .lp-logo { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 17px; color: inherit; margin-right: auto; }
-.lp-logo i { width: 22px; height: 22px; border-radius: 4px; background: linear-gradient(135deg, oklch(0.62 0.16 45), oklch(0.7 0.16 45)); }
+.lp-logo svg { flex: none; display: block; }
 .lp-link { font-size: 14px; color: oklch(0.45 0.01 70); padding: 8px 12px; border-radius: 6px; white-space: nowrap; }
 .lp-link:hover { background: oklch(0.96 0.005 70); }
 .lp-cta-dark { font-size: 14px; font-weight: 600; color: #fff !important; background: var(--ink); padding: 10px 18px; border-radius: 6px; white-space: nowrap; }

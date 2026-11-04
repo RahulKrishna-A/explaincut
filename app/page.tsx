@@ -1,6 +1,25 @@
+import type { Metadata } from "next";
 import Link from "next/link";
+import { SITE } from "@/lib/brand/site";
 import "./landing.css";
 import { DemoTabs, Faq } from "./LandingClient";
+import { LogoMark } from "./LogoMark";
+
+export const metadata: Metadata = {
+  alternates: { canonical: "/" },
+};
+
+// Structured data so search engines can show ExplainCut as an app.
+const JSON_LD = {
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  name: SITE.name,
+  description: SITE.description,
+  url: SITE.url,
+  image: `${SITE.url}/opengraph-image`,
+  applicationCategory: "MultimediaApplication",
+  operatingSystem: "Web",
+};
 
 const POWERED = ["Muse Spark", "Muse Voice Transcribe", "SAM 3.1", "Muse Wonder", "Muse Image", "Remotion"];
 const MADE_FOR = ["Dev tutorials", "Lectures", "Onboarding", "Conference talks", "Course videos", "Team explainers", "Research walkthroughs", "And more"];
@@ -16,9 +35,13 @@ const stepNum = (n: number) => <em>{n}</em>;
 export default function Landing() {
   return (
     <div className="lp">
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(JSON_LD).replace(/</g, "\\u003c") }}
+      />
       <nav className="lp-nav">
         <div className="lp-nav-in">
-          <Link href="/" className="lp-logo"><i />ExplainCut</Link>
+          <Link href="/" className="lp-logo"><LogoMark size={24} />ExplainCut</Link>
           <a href="#how" className="lp-link">How it works</a>
           <a href="#features" className="lp-link">What you get</a>
           <a href="#demo" className="lp-link">See it in action</a>
@@ -256,7 +279,9 @@ export default function Landing() {
       </section>
 
       <footer className="lp-foot">
-        <span style={{ fontWeight: 700, color: "var(--ink)", marginRight: "auto" }}>ExplainCut</span>
+        <span style={{ fontWeight: 700, color: "var(--ink)", marginRight: "auto", display: "inline-flex", alignItems: "center", gap: 8 }}>
+          <LogoMark size={20} />ExplainCut
+        </span>
         <a href="#how">How it works</a>
         <a href="#features">What you get</a>
         <a href="#demo">See it in action</a>
