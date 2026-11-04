@@ -35,6 +35,8 @@ RUN npx remotion browser ensure
 # server (next to Next.js) can run out of memory on a small instance.
 RUN npx remotion bundle --out-dir=/app/.remotion-bundle --log=error
 ENV REMOTION_BUNDLE_DIR=/app/.remotion-bundle
+# Remotion's shared-memory frame hand-off to FFmpeg fails in containers; use screenshots.
+ENV REMOTION_DISABLE_SHARED_MEMORY=1
 
 ENV NODE_ENV=production
 # Job files live here; mount a Railway volume at this path to keep them across restarts.
