@@ -10,6 +10,7 @@ import { Waiting } from "./Waiting";
 import { ReviewLive, ReviewReport, SelfReviewToggle, reviewSummary } from "./SelfReview";
 
 const OPTIONS_KEY = "explaincut.renderOptions";
+const SAMPLE_VIDEO_URL = "/samples/sample-1.mp4";
 
 // Render settings are remembered per browser. A tiny external store over
 // localStorage: hydration-safe (the server snapshot is "no saved settings"),
@@ -275,6 +276,24 @@ export default function Home() {
     [busy, setPreview]
   );
 
+  // Stage the bundled sample clip exactly as if the user had picked it.
+  const [loadingSample, setLoadingSample] = useState(false);
+  const trySample = useCallback(async () => {
+    if (busy || loadingSample) return;
+    setLoadingSample(true);
+    setErrorMessage(null);
+    try {
+      const res = await fetch(SAMPLE_VIDEO_URL);
+      if (!res.ok) throw new Error();
+      const blob = await res.blob();
+      choose(new File([blob], "sample-1.mp4", { type: blob.type || "video/mp4" }));
+    } catch {
+      setErrorMessage("Couldn't load the sample video. Try uploading your own clip.");
+    } finally {
+      setLoadingSample(false);
+    }
+  }, [busy, loadingSample, choose]);
+
   const startOver = useCallback(() => {
     stopPolling();
     setFile(null);
@@ -407,9 +426,16 @@ export default function Home() {
                     <span style={{ fontSize: 14, color: "var(--muted-2)" }}>
                       Webcam framing and a plain background work best.
                     </span>
-                    <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+                    <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap", justifyContent: "center" }}>
                       <button className="ec-btn ec-btn-dark" onClick={() => inputRef.current?.click()}>
                         Choose file
+                      </button>
+                      <button
+                        className="ec-btn ec-btn-ghost"
+                        onClick={() => void trySample()}
+                        disabled={loadingSample}
+                      >
+                        {loadingSample ? "Loading sample…" : "Try with sample video"}
                       </button>
                     </div>
                   </>
